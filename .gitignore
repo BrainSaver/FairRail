@@ -7,8 +7,11 @@ out/
 # IDE
 .idea/
 *.iml
+*.ipr
+*.iws
 .vscode/
 *.swp
+local.properties
 
 # OS
 .DS_Store
@@ -33,5 +36,28 @@ __pycache__/
 *.log
 k6-results/
 
-# Claude Code 개인 설정 (팀 공용 .claude/settings.json은 커밋)
+# Claude Code 개인 설정
+# 팀 공용: CLAUDE.md, .claude/settings.json (커밋함)
+# 개인용: CLAUDE.local.md, .claude/settings.local.json (커밋 안 함)
+CLAUDE.local.md
 .claude/settings.local.json
+.mcp.json
+
+# Spring 개인 설정 (DB 비밀번호·포트 등). 공용 값은 application.yml에
+application-local.yml
+application-local.yaml
+application-local.properties
+
+# Docker 개인 설정·데이터
+docker-compose.override.yml
+compose.override.yml
+docker-data/
+volumes/
+
+# IntelliJ HTTP Client 개인 환경
+http-client.private.env.json
+
+# 프로파일링·덤프 (트러블슈팅 때 생김, 용량 큼)
+*.hprof
+*.jfr
+heapdump*

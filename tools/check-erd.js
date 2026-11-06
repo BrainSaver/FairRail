@@ -135,13 +135,26 @@ pass(`DDL: CREATE TABLE ${(ddl.match(/CREATE TABLE/g) || []).length}, FK ${(ddl.
 
 // 5. 문서 참조
 const allCols = new Set(T.flatMap(t => t.cols.map(c => c.name)));
-const docText = Object.values(api.DOCS).flatMap(d => d.rows.flat()).concat(api.DECISIONS_SEED.map(d => d.where)).join(' ');
+const docText = Object.values(api.DOCS).flatMap(d => d.rows.flat()).concat(api.DECISIONS_SEED.map(d => d.where)).join(' ').replace(/\b\w+\.lua\b/g, '');
 const unknown = [...new Set((docText.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) || []))].filter(w => !by[w] && !allCols.has(w) && !/^(ext|ci|ip)$/.test(w));
 const knownWords = new Set((by.app_policy?.samples || []).flatMap(r => String(r.policy_key).split('.')));
-unknown.filter(w => !knownWords.has(w)).forEach(w => warn(`문서에 나오지만 테이블·컬럼이 아닌 이름: ${w}`));
+unknown.filter(w => !knownWords.has(w) && !/^(ix|ux|uq|pk|fk|ck)_/.test(w) /* 인덱스·제약 이름 */).forEach(w => warn(`문서에 나오지만 테이블·컬럼이 아닌 이름: ${w}`));
 api.DECISIONS_SEED.forEach(d => { const m = d.where.match(/^([a-z_]+)/); if (m && m[1].includes('_') && !by[m[1]]) fail(`결정 사항 반영 위치의 테이블 없음: ${d.where}`); });
 
-// 6. md 명세 비교
+// 6. 동시성 절차 문서(§) 참조 확인
+const path = require('path');
+const concPath = path.join(path.dirname(htmlPath), '..', 'concurrency.md');
+const refText = T.map(t => t.notes || '').concat(Object.values(api.DOCS).flatMap(d => d.rows.flat())).join(' ');
+const refs = [...new Set((refText.match(/§\d+(?:\.\d+)?/g) || []))];
+if (fs.existsSync(concPath)) {
+  const conc = fs.readFileSync(concPath, 'utf8');
+  const heads = new Set([...conc.matchAll(/^##\s+§(\d+)/gm)].map(m => m[1]).concat([...conc.matchAll(/^###\s+(\d+\.\d+)/gm)].map(m => m[1])));
+  const missing = refs.filter(r => !heads.has(r.slice(1)));
+  if (missing.length) fail(`concurrency.md에 없는 절 참조: ${missing.join(', ')}`);
+  else pass(`concurrency.md 참조 ${refs.length}개 모두 존재`);
+} else if (refs.length) warn(`비고·문서가 § 절을 참조하지만 ${concPath}가 없음`);
+
+// 7. md 명세 비교
 mdPaths.forEach(mp => {
   const md = fs.readFileSync(mp, 'utf8').split('\n'); let cur = null; const found = {};
   md.forEach(line => {

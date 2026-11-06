@@ -28,11 +28,11 @@ E.forEach(t => {
   const b = byB[t.id];
   if (!b) {
     const o = { id: t.id, ko: t.ko || '', g: t.g, desc: t.desc || '', notes: t.notes || '', cols: t.cols.map(tuple) };
-    if (t.db) o.db = t.db; if (t.big) o.big = true; if (t.planned) o.planned = true; if (t.noUpdatedAt) o.noUpdatedAt = true; if ((t.samples || []).length) o.samples = t.samples;
+    if (t.db) o.db = t.db; if (t.big) o.big = true; if (t.planned) o.planned = true; if (t.noUpdatedAt) o.noUpdatedAt = true; if (t.refOnly) o.refOnly = true; if ((t.samples || []).length) o.samples = t.samples;
     newTables.push(o); return;
   }
   const prop = {};
-  ['ko', 'g', 'db', 'big', 'planned', 'noUpdatedAt'].forEach(k => { const a = b[k] ?? (k === 'db' ? '' : k === 'ko' ? '' : false), c = t[k] ?? (k === 'db' ? '' : k === 'ko' ? '' : false); if (J(a) !== J(c)) prop[k] = c; });
+  ['ko', 'g', 'db', 'big', 'planned', 'noUpdatedAt', 'refOnly'].forEach(k => { const a = b[k] ?? (k === 'db' ? '' : k === 'ko' ? '' : false), c = t[k] ?? (k === 'db' ? '' : k === 'ko' ? '' : false); if (J(a) !== J(c)) prop[k] = c; });
   if (J(b.samples || []) !== J(t.samples || [])) prop.samples = t.samples || [];
   if (Object.keys(prop).length) ops.push(['prop', t.id, prop]);
   if ((b.desc || '') !== (t.desc || '')) ops.push(['desc', t.id, t.desc || '']);

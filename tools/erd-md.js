@@ -31,7 +31,7 @@ const nOra = T.filter(t => dbOf(t) === 'Oracle' && !t.planned).length, nMongo = 
 out('# FairRail 종합 ERD', '',
   '명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.', '',
   `> 스키마 v${api.SEED_VERSION} · ERD 편집기(\`docs/erd/fairrail-erd.html\`)에서 생성 · 생성일 ${new Date().toISOString().slice(0, 10)}`,
-  '> 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.', '');
+  '> 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.', '> 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.', '');
 
 out('## 목차', '', '1. [한눈에 보기](#한눈에-보기)', '2. [팀 결정 사항](#팀-결정-사항)', '3. [공통 규칙](#공통-규칙)', '4. [흐름](#흐름)', '5. [영역별 테이블](#영역별-테이블)');
 groups.forEach(([k, g], i) => out(`   ${i + 1}. [${g.name}](#${anchor('g-' + k)})`));
@@ -76,7 +76,7 @@ groups.forEach(([k, g]) => {
     out('```', '');
   }
   ts.forEach(t => {
-    const tags = [dbOf(t), t.big ? '🅱 빅데이터' : '', t.planned ? '┄ 확장 예정' : '', t.noUpdatedAt ? 'updated_at 생략' : ''].filter(Boolean).join(' · ');
+    const tags = [dbOf(t), t.big ? '🅱 빅데이터' : '', t.planned ? '┄ 확장 예정' : '', t.noUpdatedAt ? 'updated_at 생략' : '', t.refOnly ? '참조 전용(행 삭제 없음)' : ''].filter(Boolean).join(' · ');
     out(`<a id="${anchor(t.id)}"></a>`, `#### \`${t.id}\` ${t.ko || ''}`, '', `${tags}`, '');
     if (t.desc) out(t.desc, '');
     out(table(['컬럼', '타입', '키', '출처', '설명', '이유'], t.cols.map(c => {

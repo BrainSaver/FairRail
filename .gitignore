@@ -1,0 +1,37 @@
+# Gradle / Java
+.gradle/
+build/
+out/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 비밀값 (키 이름만 .env.example에)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# 로그·측정 결과 원본
+*.log
+k6-results/
+
+# Claude Code 개인 설정 (팀 공용 .claude/settings.json은 커밋)
+.claude/settings.local.json

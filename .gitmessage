@@ -1,0 +1,8 @@
+# <타입>(<범위>): <제목>  (50자 이내, 마침표 없음)
+# 타입: feat fix perf refactor test db docs build ci chore
+# 범위: queue hmac seat train event payment saga outbox notify log risk timeline cancel member admin infra auth k6 erd
+
+# 본문: 왜 바꿨는지, 무엇이 달라지는지. perf는 전후 수치 필수
+
+# 꼬리말: Refs: #이슈번호 / 트러블슈팅: docs/본인이름/troubleshooting/파일.md
+# Co-Authored-By 등 AI 도구 흔적은 넣지 않습니다

@@ -71,7 +71,10 @@ groups.forEach(([k, g]) => {
       if (!keyCols.length) out(`    ${mType(t.cols[0]?.type)} ${t.cols[0]?.name || 'id'}`);
       out('  }');
     });
-    ext.forEach(id => out(`  ${id} {`, `    ${mType(by[id].cols.find(c => hasK(c, 'PK'))?.type)} ${by[id].cols.find(c => hasK(c, 'PK'))?.name || by[id].cols[0].name} PK`, '  }'));
+    // 바깥 테이블은 PK 한 줄만. PK 컬럼이 없는 MongoDB 컬렉션은 자동 키 _id로 표시
+    const extKey = t => { const pk = t.cols.find(c => hasK(c, 'PK')); if (pk) return `${mType(pk.type)} ${pk.name} PK`;
+      return dbOf(t) === 'MongoDB' ? 'ObjectId _id PK' : `${mType(t.cols[0]?.type)} ${t.cols[0]?.name || 'id'}`; };
+    ext.forEach(id => out(`  ${id} {`, `    ${extKey(by[id])}`, '  }'));
     rel.forEach(l => out(`  ${l.to.id} ${hasK(l.col, 'NN') || hasK(l.col, 'PK') ? '||' : '|o'}--o{ ${l.from.id} : "${l.col.name}"`));
     out('```', '');
   }

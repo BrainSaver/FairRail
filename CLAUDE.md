@@ -14,6 +14,7 @@ tools/check-erd.js              스키마 검사 + DDL 생성
 tools/erd-diff.js               내보낸 JSON → 다음 버전 패치 코드
 tools/erd-md.js                 HTML → 종합 ERD 문서 생성
 docs/FairRail_ERD.md            종합 ERD 문서 (erd-md.js가 생성, 직접 고치지 않음)
+docs/concurrency.md             동시성 절차의 원천 (트랜잭션 순서·SQL·Redis Lua·락 순서·테스트 목록)
 docs/작업안내.md                팀원용 안내
 docs/templates/                 트러블슈팅·개인 기여 문서 틀
 docs/{이름}/                    팀원별 contribution.md, features/(기능 문서), troubleshooting/
@@ -23,7 +24,8 @@ CONTRIBUTING.md                 깃 규칙
 
 - 스키마를 바꾼 뒤에는 종합 문서도 다시 만듭니다: `node tools/erd-md.js docs/erd/fairrail-erd.html > docs/FairRail_ERD.md`
 
-- **스키마의 원본은 HTML 하나**입니다. `docs/spec`의 md는 과거 기록이라 최신과 다를 수 있습니다 (예: v2 md의 replay_event 시계열 설계는 v3에서 바뀜). 최신 명세가 필요하면 HTML의 데이터 블록을 읽거나 편집기 "내보내기 → Markdown 명세"를 쓰세요.
+- **원천은 두 개**입니다. 스키마(테이블·컬럼·제약·인덱스)는 HTML, 절차(트랜잭션 순서·SQL·Redis 명령)는 `docs/concurrency.md`. 테이블 비고에는 절차를 쓰지 않고 `concurrency.md §n`처럼 절 번호만 적습니다. 검사 스크립트가 § 번호가 실제로 있는지 확인합니다.
+- 스키마 쪽은 HTML 하나가 원본입니다. `docs/spec`의 md는 과거 기록이라 최신과 다를 수 있습니다 (예: v2 md의 replay_event 시계열 설계는 v3에서 바뀜). 최신 명세가 필요하면 HTML의 데이터 블록을 읽거나 편집기 "내보내기 → Markdown 명세"를 쓰세요.
 - 스키마를 바꾼 커밋에는 항상 `node tools/check-erd.js docs/erd/fairrail-erd.html` 결과가 **FAIL 0**이어야 합니다. 이 명령이 `fairrail-erd.ddl.sql`도 다시 만듭니다.
 
 ## 깃 규칙 (자세한 건 CONTRIBUTING.md)
@@ -47,9 +49,11 @@ CONTRIBUTING.md                 깃 규칙
 | `V3_TABLES`, `V3_OPS` | v3 점검 패치 | **고치지 않음** |
 | `V4_TABLES`, `V4_OPS` | v4 패치 (app_policy, 확장 예정, NOT NULL 등) | **고치지 않음** |
 | `V5_TABLES`, `V5_OPS` | v5 패치 (팀 검토 12건: 복합 FK, HOLD 만료, purchase_counter, 인덱스, 이력 등) | **고치지 않음** |
+| `V6_TABLES`, `V6_OPS` | v6 패치 (2차 검토: 결제 마감 연장, outbox 샤드, 흐름 순서, 참조 전용, expire_at 등) | **고치지 않음** |
+| `V7_TABLES`, `V7_OPS`, `DECISION_REFRESH` | v7 패치 (3차 검토 + 비고를 concurrency.md 참조로 축약) | **고치지 않음** |
 | `DECISIONS_SEED` | 팀 결정 사항 기본값 | 팀이 값을 확정하면 수정 가능 |
 | `DOCS` | 편집기 "문서" 창 내용 (공통 규칙·흐름·추적표·시나리오·생성 규칙·확장·이력) | 자유롭게 수정 |
-| `PATCHES` | `[{v:3,…},{v:4,…},{v:5,…}]` 패치 목록. `SEED_VERSION`은 여기서 자동 계산 | 새 패치를 **끝에** 추가 |
+| `PATCHES` | `[{v:3,…},…,{v:7,…}]` 패치 목록. `SEED_VERSION`은 여기서 자동 계산 | 새 패치를 **끝에** 추가 |
 | `LAYOUT` | "자동 정렬" 시 열 배치 | 새 테이블을 알맞은 열에 추가 |
 | 그 아래 | 패치 엔진, 렌더링, 패널, 문서 창, DDL·Markdown 내보내기, 시작 코드 | UI 작업 때만 |
 
@@ -58,7 +62,7 @@ CONTRIBUTING.md                 깃 규칙
 ```js
 // 테이블
 {id:'reservation', ko:'예약', g:'resv', db:'MongoDB'(생략 시 영역 기본값), big:true(빅데이터), planned:true(확장 예정),
- noUpdatedAt:true(INSERT만 하는 테이블, DDL에서 updated_at 생략),
+ noUpdatedAt:true(INSERT만 하는 테이블, DDL에서 updated_at 생략), refOnly:true(행을 지우지 않는 참조 테이블, 이 테이블을 가리키는 FK에 인덱스 생략),
  desc:'설명', notes:'제약·인덱스·비고', samples:[{컬럼:값,…}], cols:[컬럼튜플,…]}
 // 컬럼 튜플
 ['컬럼명','타입','키','출처','설명','이유','FK대상테이블(선택)']
@@ -73,7 +77,9 @@ CONTRIBUTING.md                 깃 규칙
 | add | `['add', 표, 뒤에올컬럼 또는 null(맨 앞), [튜플,…]]` | 컬럼 추가 (같은 이름이 있으면 건너뜀) |
 | set | `['set', 표, 컬럼, {type, keys, src, desc, reason, fk}]` | 컬럼 속성 변경 |
 | del | `['del', 표, 컬럼]` | 컬럼 삭제 |
-| prop | `['prop', 표, {ko, g, db, big, planned, noUpdatedAt, samples}]` | 테이블 속성 변경 (samples는 통째로 교체) |
+| prop | `['prop', 표, {ko, g, db, big, planned, noUpdatedAt, refOnly, samples}]` | 테이블 속성 변경 (samples는 통째로 교체) |
+| samples+ | `['samples+', 표, [행,…]]` | PK 값이 없는 예시 행만 추가 (기존 행과 팀원 수정은 유지) |
+| samples= | `['samples=', 표, [행,…]]` | PK로 찾아 적은 필드만 덮어쓰기, 없으면 추가 (예시값을 바꿀 때) |
 | desc / notes / notes+ | `['notes+', 표, '문자열']` | 설명 교체 / 비고 교체 / 비고 덧붙이기 |
 | nn | `['nn', 표, ['컬럼',…]]` | NOT NULL 지정 |
 | nn-auto | `['nn-auto', null, {except:['표.컬럼',…]}]` | 그 패치 시점까지 있던 Oracle 테이블의 FK·상태 코드 컬럼에 NOT NULL 일괄 지정 (v4에서 한 번 사용. 새 패치에선 `nn`을 쓰세요) |
@@ -83,16 +89,16 @@ CONTRIBUTING.md                 깃 규칙
 
 ## 스키마를 바꾸는 규칙
 
-1. **이미 배포된 블록(`SEED`, `SEED_V2`, `V3_*`, `V4_*`, `V5_*`)은 고치지 않습니다.** 팀원 브라우저에는 스키마가 저장돼 있고, 편집기는 저장된 버전(`seedVersion`) 이후의 패치만 적용합니다. 기존 블록을 고치면 새로 연 사람과 원래 쓰던 사람의 스키마가 달라집니다.
+1. **이미 배포된 블록(`SEED`, `SEED_V2`, `V3_*` ~ `V7_*`)은 고치지 않습니다.** 팀원 브라우저에는 스키마가 저장돼 있고, 편집기는 저장된 버전(`seedVersion`) 이후의 패치만 적용합니다. 기존 블록을 고치면 새로 연 사람과 원래 쓰던 사람의 스키마가 달라집니다.
 2. 바꿀 내용은 새 패치로 만듭니다.
    ```js
-   const V6_TABLES = [ /* 새 테이블 */ ];
-   const V6_OPS = [ ['add','member','ci_hash',[['birth_year','NUMBER(4)','','생성','출생 연도','연령대 통계']]] ];
-   const PATCHES = [ …기존…, {v:6,tables:V6_TABLES,ops:V6_OPS} ];
+   const V8_TABLES = [ /* 새 테이블 */ ];
+   const V8_OPS = [ ['add','member','ci_hash',[['birth_year','NUMBER(4)','','생성','출생 연도','연령대 통계']]] ];
+   const PATCHES = [ …기존…, {v:8,tables:V8_TABLES,ops:V8_OPS} ];
    ```
-   `V6_*`는 `PATCHES` 바로 위에 둡니다.
+   `V8_*`는 `PATCHES` 바로 위에 둡니다.
 3. 새 테이블은 `LAYOUT`의 알맞은 열에 넣습니다 (빠지면 검사에서 WARN).
-4. `DOCS.history`에 `['v6','변경 요약']` 한 줄을 추가합니다. 기능이나 실패 시나리오가 바뀌면 `DOCS.trace`, `DOCS.scenarios`도 고칩니다.
+4. `DOCS.history`에 `['v8','변경 요약']` 한 줄을 추가합니다. 기능이나 실패 시나리오가 바뀌면 `DOCS.trace`, `DOCS.scenarios`도 고칩니다.
 5. `node tools/check-erd.js docs/erd/fairrail-erd.html` → FAIL 0 확인. WARN은 읽고 의도한 것인지 판단합니다 (FK를 일부러 걸지 않는 ID 컬럼은 스크립트의 `NO_FK_OK`에 추가).
 6. 저장소 키 `STORE = 'fairrail-erd-v1'`은 **바꾸지 않습니다.** 바꾸면 모든 팀원의 편집 내용이 사라집니다.
 
@@ -115,6 +121,10 @@ CONTRIBUTING.md                 깃 규칙
 | 복호화가 필요한 개인정보 | AES-256-GCM 암호문 + 키 버전 컬럼 (`phone_enc` + `enc_key_id`) |
 | 예시 데이터 | `samples`에는 가짜 값만. 실제 개인정보·키·토큰 금지. **NOT NULL 컬럼은 모든 예시 행에 값이 있어야 함** (없으면 DDL INSERT 실패, 검사 FAIL). 확정 전 값은 결정 사항 상태를 "예시"로 |
 | 수정 없는 테이블 | INSERT만 하는 테이블은 `noUpdatedAt:true` (processed_event, reservation_history, app_policy_history) |
+| updated_at | DDL 기본값은 INSERT 시각뿐. JPA Auditing(`@LastModifiedDate`)으로 세팅하고, **비고의 네이티브 조건부 UPDATE에는 반드시 `updated_at = SYSTIMESTAMP`** |
+| 마감 시각 | `reservation.pay_deadline_at`이 원천. `seat_inventory.hold_expires_at`, Redis `seat:hold` TTL, `saga_instance.timeout_at`, `waitlist.offer_deadline_at`은 같은 값을 복사하고 바꿀 때도 함께 |
+| 참조 전용 | 행을 지우지 않는 참조 테이블은 `refOnly:true` (station, route, car_type). 삭제가 생기면 플래그를 풀어 FK 인덱스를 되살림 |
+| 인덱스 | 쓰기 폭주 테이블(reservation, seat_inventory, outbox_event)에 인덱스를 추가할 땐 쓰는 쿼리를 비고에 같이 적음. 배치 전용이면 오프피크 풀스캔을 먼저 검토 |
 | 빅데이터 | 대량 적재 컬렉션은 `big:true` (편집기 "빅데이터" 버튼이 흐리게 처리) |
 | 확장 예정 | 지금 구현하지 않는 테이블은 `planned:true` (점선 표시, DDL 제외) |
 
@@ -127,6 +137,7 @@ CONTRIBUTING.md                 깃 규칙
 | `UNIQUE(a, b)` | `UNIQUE(member_id, idempotency_key)` | 테이블 UNIQUE 제약 |
 | `CHECK(조건)` | `CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR …)` | 테이블 CHECK 제약 (괄호 짝 맞춤) |
 | `FK(a, b) → 표(c, d)` | `FK(train_id, seat_id) → seat(train_id, seat_id)` | 복합 FK + 인덱스. 대상 표에 같은 컬럼·순서의 PK나 `UNIQUE(c, d)`가 있어야 함. 같은 대상을 가리키는 단일 FK는 DDL에서 생략 |
+| `CREATE SEQUENCE 이름 …;` | `CREATE SEQUENCE outbox_seq CACHE 1000;` | DDL 맨 앞에 출력 |
 | `CREATE [UNIQUE] INDEX 이름 ON 표 (…);` | `CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN … END);` | 그대로 출력. **끝에 `;`** 를 붙여야 뒤 설명과 구분됨. 이름 30자 이내 |
 
 상태 코드 컬럼(`status`, `*_type` 등)에 CHECK가 없으면 검사 스크립트가 WARN을 냅니다. 값이 열려 있는 컬럼은 스크립트의 `NO_CHECK_OK`에 추가합니다.
@@ -155,8 +166,9 @@ CONTRIBUTING.md                 깃 규칙
 - **JPA**: 복합 PK 테이블(route_station, train_car, train_stop, member_device, seat_inventory, reservation_seat, processed_event, risk_score, case_session, purchase_counter)은 `@IdClass` 또는 `@EmbeddedId`. 상태 코드는 `@Enumerated(EnumType.STRING)`, `CHAR(1)` Y/N은 `AttributeConverter<Boolean,String>`.
 - **MongoDB**: 테이블 비고(notes)에 적힌 인덱스·TTL·유니크를 `mongo-init.js`로 만듭니다 (편집기 DDL은 Oracle만 생성).
 - **Redis**: `redis_keys` 테이블의 키 패턴을 그대로 쓰고, TTL·임계값은 하드코딩하지 말고 `app_policy`에서 읽습니다. 매수 제한은 Redis가 1차, `purchase_counter` 조건부 UPDATE가 최종 판정입니다.
-- **동시성 규칙**: 좌석 재선점·취소표 제안·outbox 릴레이·매수 카운터의 SQL 패턴은 각 테이블 비고와 편집기 "문서 → 흐름"에 있습니다. 그대로 구현하세요.
-- **Kafka**: 메시지 키는 `outbox_event.partition_key`. 예약 흐름 이벤트는 모두 reservation_id.
+- **동시성 절차**: `docs/concurrency.md`를 그대로 구현합니다. 절차를 바꿔야 하면 그 문서를 먼저 고치고, 스키마 변경이 따르면 같은 커밋에서 HTML 패치도 만듭니다. §16 테스트 목록은 통합 테스트로 옮깁니다.
+- **Kafka**: 메시지 키는 `outbox_event.partition_key`. 예약 흐름 이벤트는 모두 reservation_id. 릴레이는 `shard_no`로 담당 샤드를 고정하고 샤드 안에서 순서대로, 멱등 프로듀서로 발행합니다.
+- **Redis**: 단일 노드 전제. 클러스터로 바꾸면 `redis_keys` 비고의 해시 태그 규칙으로 키를 바꿔야 Lua 다중 키가 동작합니다.
 
 ## 편집기 UI를 고칠 때
 
@@ -169,6 +181,7 @@ CONTRIBUTING.md                 깃 규칙
 
 ## 하지 말 것
 
+- 테이블 비고에 SQL 절차를 다시 길게 쓰기 (concurrency.md에 쓰고 § 번호만 참조)
 - 배포된 패치 블록 수정, `STORE` 키 변경
 - `fairrail-erd.ddl.sql`이나 `docs/spec/*.md`를 원본처럼 직접 수정
 - 검사 FAIL이 남은 상태로 커밋

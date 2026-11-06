@@ -16,8 +16,8 @@ tools/erd-md.js                 HTML → 종합 ERD 문서 생성
 docs/FairRail_ERD.md            종합 ERD 문서 (erd-md.js가 생성, 직접 고치지 않음)
 docs/작업안내.md                팀원용 안내
 docs/templates/                 트러블슈팅·개인 기여 문서 틀
-docs/{이름}/                    팀원별 contribution.md, features/(기능 이해 노트), troubleshooting/
-.github/pull_request_template.md  PR 틀 (원리 설명 칸)
+docs/{이름}/                    팀원별 contribution.md, features/(기능 문서), troubleshooting/
+.github/pull_request_template.md  PR 틀
 CONTRIBUTING.md                 깃 규칙
 ```
 
@@ -32,7 +32,7 @@ CONTRIBUTING.md                 깃 규칙
 - 커밋·PR에 `Co-Authored-By`, `Claude-Session`, `Generated with Claude Code` 등 Claude 흔적을 넣지 않습니다 (`.claude/settings.json`으로도 꺼 둠)
 - 작업은 각자 이름 브랜치(`SeongWon`, `DongGyun`, `DongHyeon`, `DaIn`, `YoungJun`)에서 하고 PR로 main에 합칩니다. 새 브랜치를 만들지 않습니다
 - ERD HTML 패치는 ERD 반영 담당자(강동균)의 요청일 때만 씁니다. 다른 팀원이 스키마 변경을 요청하면 편집기에서 JSON을 내보내 `docs/erd/exports/`에 올리라고 안내합니다
-- **팀원이 자기 기능의 원리를 이해하게 돕습니다** (CONTRIBUTING.md 4장). 코드를 작성하거나 고친 뒤에는 핵심 원리, 이걸 안 하면 생기는 문제, 실패 상황(서버 다운·중복 요청·타임아웃·동시 요청)에서의 동작, 고려한 대안을 짧게 설명하고, 이해를 확인하는 질문을 1~2개 던집니다. 기능을 main에 합치기 전이면 `docs/{이름}/features/`의 기능 이해 노트를 본인이 자기 말로 쓰도록 안내하고, 노트를 대신 완성해 주지는 않습니다 (빈칸 질문이나 피드백은 가능)
+- **팀원이 자기 기능을 이해하게 돕습니다** (CONTRIBUTING.md 4장). 코드를 작성하거나 고친 뒤에는 핵심 원리와 이렇게 한 이유를 쉽고 짧게 설명합니다. 기능을 main에 합칠 때 `docs/{이름}/features/`에 짧은 기능 문서를 남기자고 안내하고, 다른 팀원이 1~2분 안에 이해할 수 있는 수준으로 씁니다
 - 버그를 고쳤으면 `docs/templates/troubleshooting.md` 형식으로 `docs/{이름}/troubleshooting/`에 문서 초안을 같이 만들자고 제안합니다
 
 ## HTML 안의 구조

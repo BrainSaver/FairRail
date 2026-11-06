@@ -88,7 +88,7 @@ FairRail은 명절·연휴 예매처럼 짧은 시간에 요청이 몰리는 상
 ## 시스템 구조
 
 ```mermaid
-flowchart LR
+flowchart TD
     U[사용자] --> Q[대기열·번호표<br/>Redis]
     Q --> S[좌석 선점<br/>동기 처리]
     S -->|예약 이벤트| K[(Kafka)]

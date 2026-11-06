@@ -51,9 +51,10 @@ CONTRIBUTING.md                 깃 규칙
 | `V5_TABLES`, `V5_OPS` | v5 패치 (팀 검토 12건: 복합 FK, HOLD 만료, purchase_counter, 인덱스, 이력 등) | **고치지 않음** |
 | `V6_TABLES`, `V6_OPS` | v6 패치 (2차 검토: 결제 마감 연장, outbox 샤드, 흐름 순서, 참조 전용, expire_at 등) | **고치지 않음** |
 | `V7_TABLES`, `V7_OPS`, `DECISION_REFRESH` | v7 패치 (3차 검토 + 비고를 concurrency.md 참조로 축약) | **고치지 않음** |
+| `V8_TABLES`, `V8_OPS`, `DECISION_REFRESH_V8` | v8 패치 (4차 검토: 스캐너 분리·next_check_at, 취소표 대기자 우선, cancellation·saga 코드 정리, inbox 8일 등) | **고치지 않음** |
 | `DECISIONS_SEED` | 팀 결정 사항 기본값 | 팀이 값을 확정하면 수정 가능 |
 | `DOCS` | 편집기 "문서" 창 내용 (공통 규칙·흐름·추적표·시나리오·생성 규칙·확장·이력) | 자유롭게 수정 |
-| `PATCHES` | `[{v:3,…},…,{v:7,…}]` 패치 목록. `SEED_VERSION`은 여기서 자동 계산 | 새 패치를 **끝에** 추가 |
+| `PATCHES` | `[{v:3,…},…,{v:8,…}]` 패치 목록. `SEED_VERSION`은 여기서 자동 계산 | 새 패치를 **끝에** 추가 |
 | `LAYOUT` | "자동 정렬" 시 열 배치 | 새 테이블을 알맞은 열에 추가 |
 | 그 아래 | 패치 엔진, 렌더링, 패널, 문서 창, DDL·Markdown 내보내기, 시작 코드 | UI 작업 때만 |
 
@@ -89,16 +90,16 @@ CONTRIBUTING.md                 깃 규칙
 
 ## 스키마를 바꾸는 규칙
 
-1. **이미 배포된 블록(`SEED`, `SEED_V2`, `V3_*` ~ `V7_*`)은 고치지 않습니다.** 팀원 브라우저에는 스키마가 저장돼 있고, 편집기는 저장된 버전(`seedVersion`) 이후의 패치만 적용합니다. 기존 블록을 고치면 새로 연 사람과 원래 쓰던 사람의 스키마가 달라집니다.
+1. **이미 배포된 블록(`SEED`, `SEED_V2`, `V3_*` ~ `V8_*`)은 고치지 않습니다.** 팀원 브라우저에는 스키마가 저장돼 있고, 편집기는 저장된 버전(`seedVersion`) 이후의 패치만 적용합니다. 기존 블록을 고치면 새로 연 사람과 원래 쓰던 사람의 스키마가 달라집니다.
 2. 바꿀 내용은 새 패치로 만듭니다.
    ```js
-   const V8_TABLES = [ /* 새 테이블 */ ];
-   const V8_OPS = [ ['add','member','ci_hash',[['birth_year','NUMBER(4)','','생성','출생 연도','연령대 통계']]] ];
-   const PATCHES = [ …기존…, {v:8,tables:V8_TABLES,ops:V8_OPS} ];
+   const V9_TABLES = [ /* 새 테이블 */ ];
+   const V9_OPS = [ ['add','member','ci_hash',[['birth_year','NUMBER(4)','','생성','출생 연도','연령대 통계']]] ];
+   const PATCHES = [ …기존…, {v:9,tables:V9_TABLES,ops:V9_OPS} ];
    ```
-   `V8_*`는 `PATCHES` 바로 위에 둡니다.
+   `V9_*`는 `PATCHES` 바로 위에 둡니다. 기존 결정 사항의 기본값을 바꿨다면 그 항목 이름을 `DECISION_REFRESH_V9` 같은 새 목록에 넣고 `migrate()`에서 함께 읽게 합니다.
 3. 새 테이블은 `LAYOUT`의 알맞은 열에 넣습니다 (빠지면 검사에서 WARN).
-4. `DOCS.history`에 `['v8','변경 요약']` 한 줄을 추가합니다. 기능이나 실패 시나리오가 바뀌면 `DOCS.trace`, `DOCS.scenarios`도 고칩니다.
+4. `DOCS.history`에 `['v9','변경 요약']` 한 줄을 추가합니다. 기능이나 실패 시나리오가 바뀌면 `DOCS.trace`, `DOCS.scenarios`도 고칩니다.
 5. `node tools/check-erd.js docs/erd/fairrail-erd.html` → FAIL 0 확인. WARN은 읽고 의도한 것인지 판단합니다 (FK를 일부러 걸지 않는 ID 컬럼은 스크립트의 `NO_FK_OK`에 추가).
 6. 저장소 키 `STORE = 'fairrail-erd-v1'`은 **바꾸지 않습니다.** 바꾸면 모든 팀원의 편집 내용이 사라집니다.
 
@@ -114,13 +115,13 @@ CONTRIBUTING.md                 깃 규칙
 | 상태 코드 | 컬럼 설명을 `A / B / C` (대문자, 공백-슬래시-공백) 형식으로 쓰면 DDL에 CHECK 제약이 자동 생성됨. Java enum 값도 같게 |
 | 여부 | `CHAR(1)` + 설명에 `Y/N` 또는 `여부` → CHECK ('Y','N') |
 | 금액 | `NUMBER(10)` 원 단위 |
-| 시간 | `TIMESTAMP`, Asia/Seoul. 서버·DB·JVM 시간대 고정 |
+| 시간 | `TIMESTAMP`, Asia/Seoul. Oracle 컨테이너 OS·JVM·DB 세션 시간대 고정, 마감 시각은 앱 시계로 계산 (concurrency.md §0.7) |
 | 비밀번호 | Argon2id PHC 문자열 `VARCHAR2(255)` (member_credential, admin_user). 파라미터는 app_policy `auth.argon2_params` |
 | 토큰 | 리프레시·재설정 토큰은 SHA-256 해시만 저장 |
 | 식별 해시 | `*_hash`는 HMAC-SHA256. 키는 프로젝트 기간 고정 |
 | 복호화가 필요한 개인정보 | AES-256-GCM 암호문 + 키 버전 컬럼 (`phone_enc` + `enc_key_id`) |
 | 예시 데이터 | `samples`에는 가짜 값만. 실제 개인정보·키·토큰 금지. **NOT NULL 컬럼은 모든 예시 행에 값이 있어야 함** (없으면 DDL INSERT 실패, 검사 FAIL). 확정 전 값은 결정 사항 상태를 "예시"로 |
-| 수정 없는 테이블 | INSERT만 하는 테이블은 `noUpdatedAt:true` (processed_event, reservation_history, app_policy_history) |
+| 수정 없는 테이블 | INSERT만 하는 테이블은 `noUpdatedAt:true` (processed_event, reservation_history, app_policy_history). outbox_event·notification·cancellation은 나중에 UPDATE하므로 해당 없음 |
 | updated_at | DDL 기본값은 INSERT 시각뿐. JPA Auditing(`@LastModifiedDate`)으로 세팅하고, **비고의 네이티브 조건부 UPDATE에는 반드시 `updated_at = SYSTIMESTAMP`** |
 | 마감 시각 | `reservation.pay_deadline_at`이 원천. `seat_inventory.hold_expires_at`, Redis `seat:hold` TTL, `saga_instance.timeout_at`, `waitlist.offer_deadline_at`은 같은 값을 복사하고 바꿀 때도 함께 |
 | 참조 전용 | 행을 지우지 않는 참조 테이블은 `refOnly:true` (station, route, car_type). 삭제가 생기면 플래그를 풀어 FK 인덱스를 되살림 |
@@ -138,7 +139,7 @@ CONTRIBUTING.md                 깃 규칙
 | `CHECK(조건)` | `CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR …)` | 테이블 CHECK 제약 (괄호 짝 맞춤) |
 | `FK(a, b) → 표(c, d)` | `FK(train_id, seat_id) → seat(train_id, seat_id)` | 복합 FK + 인덱스. 대상 표에 같은 컬럼·순서의 PK나 `UNIQUE(c, d)`가 있어야 함. 같은 대상을 가리키는 단일 FK는 DDL에서 생략 |
 | `CREATE SEQUENCE 이름 …;` | `CREATE SEQUENCE outbox_seq CACHE 1000;` | DDL 맨 앞에 출력 |
-| `CREATE [UNIQUE] INDEX 이름 ON 표 (…);` | `CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN … END);` | 그대로 출력. **끝에 `;`** 를 붙여야 뒤 설명과 구분됨. 이름 30자 이내 |
+| `CREATE [UNIQUE] INDEX 이름 ON 표 (…);` | `CREATE INDEX ix_resv_hold_due ON reservation (CASE WHEN … END);` | 그대로 출력. **끝에 `;`** 를 붙여야 뒤 설명과 구분됨. 이름 30자 이내 |
 
 상태 코드 컬럼(`status`, `*_type` 등)에 CHECK가 없으면 검사 스크립트가 WARN을 냅니다. 값이 열려 있는 컬럼은 스크립트의 `NO_CHECK_OK`에 추가합니다.
 
@@ -168,7 +169,7 @@ CONTRIBUTING.md                 깃 규칙
 - **Redis**: `redis_keys` 테이블의 키 패턴을 그대로 쓰고, TTL·임계값은 하드코딩하지 말고 `app_policy`에서 읽습니다. 매수 제한은 Redis가 1차, `purchase_counter` 조건부 UPDATE가 최종 판정입니다.
 - **동시성 절차**: `docs/concurrency.md`를 그대로 구현합니다. 절차를 바꿔야 하면 그 문서를 먼저 고치고, 스키마 변경이 따르면 같은 커밋에서 HTML 패치도 만듭니다. §16 테스트 목록은 통합 테스트로 옮깁니다.
 - **Kafka**: 메시지 키는 `outbox_event.partition_key`. 예약 흐름 이벤트는 모두 reservation_id. 릴레이는 `shard_no`로 담당 샤드를 고정하고 샤드 안에서 순서대로, 멱등 프로듀서로 발행합니다.
-- **Redis**: 단일 노드 전제. 클러스터로 바꾸면 `redis_keys` 비고의 해시 태그 규칙으로 키를 바꿔야 Lua 다중 키가 동작합니다.
+- **Redis**: 단일 노드, `maxmemory-policy noeviction`, AOF `everysec`. 커밋 뒤 Redis 정리는 outbox 소비(`seat-release`)로 보장합니다 (concurrency.md §14.3). 클러스터로 바꾸면 `redis_keys` 비고의 해시 태그 규칙으로 키를 바꿔야 Lua 다중 키가 동작합니다.
 
 ## 편집기 UI를 고칠 때
 

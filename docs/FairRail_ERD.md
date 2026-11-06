@@ -2,8 +2,9 @@
 
 명절 열차 공정 예매 시스템의 전체 데이터 구조입니다. 짧은 시간에 몰리는 예매 트래픽을 대기열로 제어하고, 좌석을 중복 없이 공정한 순서로 판매하며, 되팔이·반복 취소가 의심되는 이용자를 행동 데이터로 찾아 대기 순번을 뒤로 미루고 CCTV처럼 되돌아볼 수 있게 하는 데 필요한 테이블을 모았습니다.
 
-> 스키마 v5 · ERD 편집기(`docs/erd/fairrail-erd.html`)에서 생성 · 생성일 2026-11-06
+> 스키마 v7 · ERD 편집기(`docs/erd/fairrail-erd.html`)에서 생성 · 생성일 2026-11-06
 > 이 문서는 편집기에서 자동 생성됩니다. 내용을 바꾸려면 편집기 HTML을 고친 뒤 `node tools/erd-md.js`로 다시 만드세요.
+> 예매·결제·취소·이벤트 발행의 트랜잭션 순서와 SQL은 [동시성 절차](concurrency.md)에 있습니다. 비고의 `§` 번호가 그 문서의 절입니다.
 
 ## 목차
 
@@ -38,7 +39,7 @@
 | 테이블 | 60개 (운영 56 + 확장 예정 4) |
 | 저장소 | Oracle 44 · MongoDB 11 · Redis 1 · 확장 예정 4 |
 | 빅데이터 (대량 적재) | 11개 |
-| 컬럼 | 494개 |
+| 컬럼 | 503개 |
 | 관계 (FK) | 85개 (Oracle 제약 60 · 논리 참조 20) |
 
 | 영역 | 저장소 | 테이블 |
@@ -79,6 +80,11 @@
 | outbox 보관 시간 | 발행 완료 후 24시간 · 한 번에 500행 | app_policy outbox.* | 릴레이 스캔과 테이블 크기 유지 | 예시 |
 | 녹화 전송 상한 | 궤적 50점/이벤트 · 5초 묶음 · 세션당 5000개 | app_policy replay.* | 오픈 시각 Mongo 쓰기 폭주 방지 | 예시 |
 | 로그 적재 묶음 | insertMany 1000건 | app_policy behavior.batch_size | Kafka 컨슈머 배치 적재 | 예시 |
+| 결제 시작 시 마감 연장 | GREATEST(기존 마감, 지금 + PG 타임아웃 180초 + 여유 60초), 한 번만 | app_policy payment.* | 앱카드·ISP 인증 시간 포함. 연장이 마감을 줄이지 않게 | 예시 |
+| outbox 샤드 담당 | Redis 리스 15초, FOR UPDATE WAIT 5초, 재시도 5회 후 샤드 정지 | app_policy relay.*, outbox.max_retry | 리스 이동 중에도 순서 유지 | 예시 |
+| outbox 샤드 수 | 16개 고정, 인스턴스가 나눠 담당 | app_policy outbox.shard_count, outbox_event.shard_no | 같은 예약 이벤트는 한 릴레이가 순서대로 발행 | 예시 |
+| Inbox 보관 기간 | 7일 | app_policy inbox.retention_days | Kafka 보관 기간보다 길게 | 예시 |
+| Redis 구성 | 단일 노드 | 인프라 | 클러스터 전환 시 키를 해시 태그로 바꿔야 함 (redis_keys 비고) | 예시 |
 | Oracle 에디션 | Docker Oracle Free, 파티셔닝 미사용 전제 | 인프라 | 파티셔닝은 부하 테스트 결과를 보고 판단 | 예시 |
 
 ## 공통 규칙
@@ -100,19 +106,30 @@
 | 비고(notes) 표기 | UNIQUE(a, b) · CHECK(조건) · FK(a, b) → 표(c, d) · CREATE INDEX 이름 ON 표 (…); 형식은 DDL에 그대로 반영 | 편집기가 단일 FK만 그리므로 복합 제약은 비고로 관리 |
 | 수정 없는 테이블 | INSERT만 하는 테이블은 updated_at 생략 (processed_event, reservation_history, app_policy_history) | 의미 없는 컬럼 제거 |
 | 예시 데이터 | NOT NULL 컬럼은 예시 행에 반드시 값이 있어야 함 (검사 스크립트가 확인) | DDL의 INSERT 실패 방지 |
+| 마감 시각 원천 | reservation.pay_deadline_at이 원천. seat_inventory.hold_expires_at, seat:hold TTL, saga_instance.timeout_at, waitlist.offer_deadline_at은 같은 값을 한 번 계산해 복사하고 바꿀 때도 함께 | 다섯 곳이 어긋나면 만료·재선점 판단이 달라짐 |
+| 동시성 절차 | 트랜잭션 경계·실행 순서·SQL·Redis 명령은 docs/concurrency.md가 원천. 테이블 비고에는 제약·인덱스와 절 번호만 | 같은 규칙이 여러 곳에 흩어지면 어긋남 |
+| 네이티브 UPDATE | updated_at = SYSTIMESTAMP, version 컬럼이 있으면 version = version + 1, 현재 상태를 WHERE에 넣고 영향 행 수 확인 (concurrency.md §0.3) | 값이 거짓이 되거나 JPA 낙관적 락이 충돌을 놓침 |
+| 락 순서 | reservation → seat_inventory → payment → purchase_counter(정렬) → waitlist → INSERT만 하는 테이블 (concurrency.md §0.4) | 데드락 방지 |
+| 참조 전용 테이블 | station·route·car_type은 행 삭제 금지. 이 테이블을 가리키는 FK에는 인덱스를 만들지 않음 (refOnly) | 쓰기 폭주 테이블의 불필요한 인덱스 제거 |
+| outbox 샤드 | outbox_event.shard_no는 INSERT 문에서 ORA_HASH(:partition_key, 15)로 계산. 앱이 직접 숫자를 넣지 않음 | 같은 partition_key는 항상 같은 샤드 |
 
 ## 흐름
 
-| 흐름 | 단계 |
+| 흐름 | 단계 (자세한 절차: docs/concurrency.md) |
 |---|---|
-| 예매 | 로그인(auth_session) → 대기열(queue:{runId}, 위험 점수만큼 뒤로) → 입장 토큰(queue:pass) → 좌석 조회(seatmap) → 선점(seat:hold + seat_inventory HOLD) → reservation HOLD → outbox SEAT_HELD → 결제(payment) → CONFIRMED |
-| 결제 실패·기한 초과 | saga_instance 보상 → seat_inventory 행 삭제 + seat:hold 삭제 → reservation EXPIRED → purchase_counter·limit:* 감소 → 취소표 재배정 이벤트. 스캐너가 늦어 HOLD 행이 남아 있어도 hold_expires_at이 지났으면 다음 사람이 재선점(조건부 UPDATE)하고, 같은 트랜잭션에서 이전 예약을 EXPIRED로 |
-| 좌석 재선점 | seat:hold SET NX 성공 → seat_inventory INSERT → PK 충돌이면 UPDATE … WHERE status = HOLD AND hold_expires_at < 지금 → 모든 구간이 1행씩 갱신되면 성공, 아니면 롤백. 이전 예약자가 늦게 결제하면 seat_inventory.reservation_id 불일치로 거부 |
-| 매수 제한 | limit:* Lua INCRBY → 한도 초과면 DECRBY 후 거부 → purchase_counter 조건부 UPDATE(seat_count + n ≤ max)로 최종 판정 → 취소·만료·결제 실패 시 둘 다 감소 → Redis 키가 없으면 purchase_counter에서 복원 |
-| outbox 릴레이 | PENDING 부분 인덱스로 조회 + FOR UPDATE SKIP LOCKED (인스턴스 여러 개) → Kafka 발행 → PUBLISHED, published_at → 보관 시간 지나면 정리 배치 삭제 |
-| 로그 적재 | behavior_log·replay_event: 앱 → Kafka → 적재 컨슈머 insertMany 배치. 녹화는 클라이언트가 5초 단위로 묶어 전송, 궤적·세션 이벤트 수 상한 적용 |
+| 예매 | 로그인 → 대기열(위험 점수만큼 뒤로) → 입장 토큰(queue:pass) → 멱등 키로 reservation_id 확보 (§1) → limit:* 1차 → seat:hold 전 구간 SET NX, 패배자는 DB 쓰기 0건 → 승자만 한 트랜잭션: reservation → seat_inventory → reservation_seat → purchase_counter → reservation_history → saga_instance → outbox SEAT_HELD (§2) → 롤백되면 Redis 보상 (§2.3) |
+| 재선점 | 만료된 HOLD가 있으면 같은 트랜잭션에서 이전 예약을 잠그고 HOLD일 때만 EXPIRED, 이전 예약의 HOLD 행 전부 삭제, 카운터 전체 감소. 결제 중·확정 예약은 재선점 불가 (§3) |
+| 결제 시작 | HOLD → PAYMENT_PENDING 조건부 UPDATE로 마감을 GREATEST로 한 번 연장 → seat_inventory·saga 복사, 좌석 수만큼 갱신돼야 진행 → payment REQUESTED → 커밋 후 seat:hold 연장 → PG 호출 (§4) |
+| 결제 확정 | payment APPROVED → seat_inventory 구간 수만큼 SOLD → reservation CONFIRMED → saga DONE → seat:hold를 SOLD:R로. 행 수가 안 맞으면 롤백 후 늦은 승인 환불 (§5) |
+| 만료 스캐너 | HOLD는 해제, PAYMENT_PENDING은 PG 조회 후 확정 또는 실패 처리, 결과 모르면 자동 만료 없이 알림 (§6) |
+| 해제 | 예약 상태 조건부 UPDATE 1행 → HOLD 행 삭제 → 카운터 감소 → saga COMPENSATED → 커밋 후 Redis 해제·한도 감소 (§7) |
+| 취소 | CONFIRMED → CANCELED 1행 → SOLD 행 삭제 → 카운터 감소 → cancellation(수수료) → 커밋 후 Redis 해제·환불 요청 (§8) |
+| 취소표 | 빈 좌석 이벤트 → 대기자 FOR UPDATE SKIP LOCKED → 그 대기자 명의로 선점(카운터 증가 포함) + WAITING→OFFERED, 한도 초과면 SKIPPED → 결제가 수락 (§9) |
+| 매수 제한 | limit:* Lua 1차 → purchase_counter 조건부 UPDATE 최종, 행 없으면 INSERT(ORA-00001 재시도) → 감소는 상태 UPDATE 1행일 때만 → 한 트랜잭션의 카운터는 정렬 순서로 → Redis 복원은 SET NX 후 INCRBY (§10) |
+| outbox 릴레이 | reservation 행 갱신 뒤 outbox INSERT(seq) → 샤드마다 Redis 리스 → FOR UPDATE WAIT 커서로 seq 순 fetch → 하나씩 발행 → 재시도 소진 시 FAILED, 그 샤드 정지 (§11) |
+| Kafka 소비 | processed_event INSERT(중복이면 skip) → 업무 처리 → 커밋 → 오프셋 커밋 (§12) |
+| 로그 적재·보관 | behavior_log·replay_event는 Kafka → insertMany. expire_at TTL, legal_hold 세션은 컨슈머가 expire_at 없이 저장 (§13) |
 | 운영 설정 변경 | app_policy 값 변경 → version + 1 → app_policy_history 한 행 → policy:cache 갱신 → 각 서버가 version 비교 후 다시 로딩 |
-| 취소 | cancellation(수수료 cancel_fee_policy) → 환불(refund_pg_tx_id) → seat_inventory 반환 → waitlist 순서대로 OFFERED → notification → 기한 내 결제 or 다음 대기자 |
 | 위험 점수 | behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영 |
 | CCTV | 임계 초과·규칙 적중 → suspicious_case → 같은 CI·기기·결제수단 세션 case_session → 자동 case_marker → evidence_snapshot 동결(조각+해시) → 관리자 재생·판정 → admin_action → replay_access_log에 열람 기록 |
 | Argon2 로그인 | rate:login 확인 → 세마포어 획득(auth.max_concurrent_hash) → Argon2id 검증(없는 계정도 더미 해시) → verify_ms 기록 → needs_rehash면 재해싱 → auth_session 발급 |
@@ -245,7 +262,7 @@ erDiagram
 <a id="station"></a>
 #### `station` 역
 
-Oracle
+Oracle · 참조 전용(행 삭제 없음)
 
 역 기본 정보. 공공데이터의 역 코드를 그대로 PK로 사용한다.
 
@@ -256,12 +273,14 @@ Oracle
 | `latitude` | NUMBER(9,6) |  | 공공 | 위도 | 선택. 지도·관리자 화면 |
 | `longitude` | NUMBER(9,6) |  | 공공 | 경도 | 선택 |
 
+> **제약·비고** 참조 전용: 행 삭제 금지 (이 테이블을 가리키는 FK에는 인덱스를 만들지 않음)
+
 **관계** [`route`](#route).origin_station_id → 이 테이블 · [`route`](#route).dest_station_id → 이 테이블 · [`route_station`](#route-station).station_id → 이 테이블 · [`train_stop`](#train-stop).station_id → 이 테이블 · [`fare`](#fare).from_station_id → 이 테이블 · [`fare`](#fare).to_station_id → 이 테이블 · [`reservation`](#reservation).from_station_id → 이 테이블 · [`reservation`](#reservation).to_station_id → 이 테이블 · [`waitlist`](#waitlist).from_station_id → 이 테이블 · [`waitlist`](#waitlist).to_station_id → 이 테이블
 
 <a id="route"></a>
 #### `route` 노선
 
-Oracle
+Oracle · 참조 전용(행 삭제 없음)
 
 노선(예: 경부선)과 기점·종점역.
 
@@ -271,6 +290,8 @@ Oracle
 | `route_name` | VARCHAR2(50) | NN | 공공 | 노선명 (예: 경부선) |  |
 | `origin_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 기점역 |  |
 | `dest_station_id` | VARCHAR2(10) | FK, NN → station | 공공 | 종점역 |  |
+
+> **제약·비고** 참조 전용: 행 삭제 금지 (이 테이블을 가리키는 FK에는 인덱스를 만들지 않음)
 
 **관계** origin_station_id → [`station`](#station) · dest_station_id → [`station`](#station) · [`route_station`](#route-station).route_id → 이 테이블 · [`train`](#train).route_id → 이 테이블
 
@@ -295,7 +316,7 @@ Oracle
 <a id="car-type"></a>
 #### `car_type` 차량 유형
 
-Oracle
+Oracle · 참조 전용(행 삭제 없음)
 
 차량 유형 코드와 좌석 수. seat 자동 생성의 기준.
 
@@ -307,7 +328,7 @@ Oracle
 | `seat_grade` | VARCHAR2(10) | NN | 공공/생성 | GENERAL / FIRST | 등급별 운임·재고 분리 |
 | `seat_columns` | VARCHAR2(10) |  | 생성 | 좌석 열 배치 (예: ABCD) | 좌석 번호(5A) 생성 규칙 |
 
-> **제약·비고** 다운로드 후 실제 헤더명에 맞춰 컬럼명 조정 필요
+> **제약·비고** 다운로드 후 실제 헤더명에 맞춰 컬럼명 조정 필요 · 참조 전용: 행 삭제 금지 (이 테이블을 가리키는 FK에는 인덱스를 만들지 않음)
 
 **관계** [`train_car`](#train-car).car_type_code → 이 테이블
 
@@ -517,6 +538,18 @@ Oracle
 | auth.max_concurrent_hash | 32 | 1 | NUMBER | 동시 Argon2 검증 수 (해시 1회 약 19MiB) |
 | auth.lock_after_failures | 5 | 1 | NUMBER | 연속 실패 시 잠금 기준 |
 | auth.lock_minutes | 15 | 1 | NUMBER | 잠금 시간(분) |
+| payment.pg_timeout_sec | 180 | 1 | NUMBER | PG 승인 요청 타임아웃(초). 앱카드·ISP 인증 시간 포함 |
+| payment.extend_grace_sec | 60 | 1 | NUMBER | 결제 시작 시 마감 연장 여유(초). 새 마감 = GREATEST(기존, 지금 + 타임아웃 + 여유) |
+| outbox.shard_count | 16 | 1 | NUMBER | outbox 샤드 수 (INSERT의 ORA_HASH 식·CHECK와 같아야 함) |
+| inbox.retention_days | 7 | 1 | NUMBER | processed_event 보관 기간 (Kafka 보관 기간보다 길게) |
+| behavior.retention_days | 180 | 1 | NUMBER | behavior_log 보관 기간 (expire_at 계산) |
+| payment.pg_unknown_max_min | 30 | 1 | NUMBER | PG 결과를 모를 때 관리자 알림까지 기다리는 시간(분). 자동 만료하지 않음 |
+| idem.ttl_sec | 600 | 1 | NUMBER | 멱등 키 보관 시간 |
+| relay.lease_sec | 15 | 1 | NUMBER | outbox 샤드 리스 시간 |
+| relay.lock_wait_sec | 5 | 1 | NUMBER | 릴레이 FOR UPDATE WAIT 시간 |
+| outbox.max_retry | 5 | 1 | NUMBER | 발행 재시도 한도. 넘으면 FAILED + 샤드 정지 |
+| queue_log.retention_days | 30 | 1 | NUMBER | queue_log 보관 기간 |
+| evidence.retention_days | 365 | 1 | NUMBER | 케이스 종료 후 증거 보관 기간 |
 
 <a id="common-code"></a>
 #### `common_code` 공통 코드 (확장)
@@ -1054,9 +1087,9 @@ Oracle
 | `segment_no` | NUMBER(3) | PK | 시스템 | 구간 번호 (역 순번 i → i+1 = i) | 구간 단위 점유 |
 | `reservation_id` | NUMBER | FK, NN → reservation | 시스템 | 점유 예약 | 반환 시 이 예약 행만 삭제 |
 | `status` | VARCHAR2(10) | NN | 시스템 | HOLD / SOLD | 선점과 확정 구분 |
-| `hold_expires_at` | TIMESTAMP |  | 시스템 | HOLD 만료 시각 (SOLD면 null) | Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준 |
+| `hold_expires_at` | TIMESTAMP |  | 시스템 | HOLD 만료 시각 (SOLD면 null) | = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준 |
 
-> **제약·비고** PK(run_id, seat_id, segment_no) — 같은 좌석·구간 중복 점유를 DB가 차단 · FK(train_id, seat_id) → seat(train_id, seat_id) · FK(run_id, train_id) → train_run(run_id, train_id) — 다른 열차 좌석 판매를 DB가 차단 · CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL)) · CREATE INDEX ix_seatinv_hold ON seat_inventory (CASE WHEN status = 'HOLD' THEN hold_expires_at END); 만료 스캐너용 · 재선점: INSERT가 PK 충돌이면 UPDATE seat_inventory SET reservation_id = :new, hold_expires_at = :exp WHERE run_id = :r AND seat_id = :s AND segment_no = :g AND status = 'HOLD' AND hold_expires_at < SYSTIMESTAMP — 모든 구간이 1행씩 갱신될 때만 성공, 하나라도 0행이면 롤백. 같은 트랜잭션에서 이전 예약을 EXPIRED로 · 결제 확정 시 seat_inventory.reservation_id가 내 예약인지 확인해 늦은 결제 거부 · 서울(1)→대전(3) 예약 시 segment 1, 2 두 행 INSERT, 대전(3)→부산(5)은 3, 4라 재판매 가능 · 확장 과제를 안 하면 segment_no = 0
+> **제약·비고** PK(run_id, seat_id, segment_no) · FK(train_id, seat_id) → seat(train_id, seat_id) · FK(run_id, train_id) → train_run(run_id, train_id) — 같은 대상의 단일 FK는 DDL에서 생략, 편집기 선만 유지 · CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL)) · CREATE INDEX ix_seatinv_hold ON seat_inventory (CASE WHEN status = 'HOLD' THEN hold_expires_at END); · 확장 과제를 안 하면 segment_no = 0 · 절차: concurrency.md §2 선점, §3 재선점(이전 예약의 HOLD 행 전부 삭제), §5 확정(구간 수만큼 SOLD), §7 해제, §8 취소
 
 **관계** run_id → [`train_run`](#train-run) · seat_id → [`seat`](#seat) · reservation_id → [`reservation`](#reservation)
 
@@ -1081,13 +1114,13 @@ Oracle
 | `channel` | VARCHAR2(10) | NN | 생성 | WEB / APP | 채널별 트래픽 분석 |
 | `source` | VARCHAR2(10) | NN | 시스템 | NORMAL / WAITLIST | 취소표 재배정 여부 |
 | `held_at` | TIMESTAMP | NN | 시스템 | 좌석 선점 시각 |  |
-| `pay_deadline_at` | TIMESTAMP | NN | 시스템 | 결제 기한 | 초과 시 자동 반환 |
+| `pay_deadline_at` | TIMESTAMP | NN | 시스템 | 결제 기한 (마감 시각의 원천) | seat_inventory.hold_expires_at, seat:hold TTL, saga_instance.timeout_at, waitlist.offer_deadline_at은 이 값을 한 번 계산해 복사. 바꿀 땐 다섯 곳을 같은 트랜잭션·같은 값으로 |
 | `confirmed_at` | TIMESTAMP |  | 시스템 | 확정 시각 | 구매→취소 시간 계산 시작점 |
 | `canceled_at` | TIMESTAMP |  | 시스템 | 취소 시각 |  |
 | `idempotency_key` | VARCHAR2(64) | NN | 시스템 | 클라이언트 요청 키 | 따닥 클릭·재시도 시 중복 예약 방지. UNIQUE 범위는 회원 단위 |
 | `version` | NUMBER | NN | 시스템 | 낙관적 락 버전 | 락 방식 성능 비교 실험용 |
 
-> **제약·비고** CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN status IN ('HOLD', 'PAYMENT_PENDING') THEN pay_deadline_at END); 만료 스캐너용. 스캐너 쿼리도 같은 CASE 식으로 조회해야 인덱스를 씀 · CREATE INDEX ix_resv_ci_run ON reservation (ci_hash, run_id); purchase_counter 재집계·Redis 복원 배치용 (1차 판정 Redis, 최종 판정 purchase_counter) · UNIQUE(member_id, idempotency_key) · from·to 역은 해당 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증)
+> **제약·비고** CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN status IN ('HOLD', 'PAYMENT_PENDING') THEN pay_deadline_at END); 만료 스캐너용 (조회도 같은 CASE 식) · UNIQUE(member_id, idempotency_key) · 마감 시각 원천 = pay_deadline_at (복사본 4곳은 concurrency.md §0.2) · 결제 시작 연장은 GREATEST로 늘리기만 (§4) · 네이티브 UPDATE는 updated_at·version 갱신 (§0.3) · from·to 역은 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증) · 절차: concurrency.md §1~§8
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · [`seat_inventory`](#seat-inventory).reservation_id → 이 테이블 · [`reservation_seat`](#reservation-seat).reservation_id → 이 테이블 · [`reservation_history`](#reservation-history).reservation_id → 이 테이블 · [`payment`](#payment).reservation_id → 이 테이블 · [`cancellation`](#cancellation).reservation_id → 이 테이블 · [`saga_instance`](#saga-instance).reservation_id → 이 테이블 · [`waitlist`](#waitlist).offered_reservation_id → 이 테이블 · [`ticket_transfer`](#ticket-transfer).reservation_id → 이 테이블
 
@@ -1105,6 +1138,8 @@ Oracle
 | `ticket_no` | VARCHAR2(20) | UQ, NN | 시스템 | 승차권 번호 | 예매 내역·반환·신고 대상 식별 |
 | `passenger_type` | VARCHAR2(10) | NN | 생성 | ADULT / CHILD / SENIOR | 운임 할인 확장 |
 | `amount` | NUMBER(10) | NN | 시스템 | 좌석별 금액 | 부분 취소 대응 |
+
+> **제약·비고** ticket_no는 선점 시 발급하지만 확정(CONFIRMED) 전에는 효력 없음 (concurrency.md §2.2)
 
 **관계** reservation_id → [`reservation`](#reservation) · seat_id → [`seat`](#seat)
 
@@ -1149,7 +1184,7 @@ PG 결제 요청과 결과. 실패 시 Saga 보상 트리거.
 | `requested_at` | TIMESTAMP | NN | 시스템 | 요청 시각 | 결제 소요 시간 측정 |
 | `approved_at` | TIMESTAMP |  | 시스템 | 승인 시각 |  |
 
-> **제약·비고** UNIQUE(reservation_id, idempotency_key) · 예약당 승인 1건: CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = 'APPROVED' THEN reservation_id END) · payment.status=REFUNDED는 cancellation.refund_status=DONE과 같은 트랜잭션에서 갱신
+> **제약·비고** UNIQUE(reservation_id, idempotency_key) · 예약당 승인 1건: CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = 'APPROVED' THEN reservation_id END) · payment.status=REFUNDED는 cancellation.refund_status=DONE과 같은 트랜잭션에서 갱신 · 절차: concurrency.md §1 멱등, §4 결제 시작(REQUESTED), §5 확정, §6 스캐너가 REQUESTED 건은 PG 조회 후 확정 또는 실패 처리 (결과 모르면 자동 만료 안 함), §7.3 늦은 승인 환불
 
 **관계** reservation_id → [`reservation`](#reservation) · method_id → [`payment_method`](#payment-method)
 
@@ -1174,6 +1209,8 @@ Oracle
 | `refund_pg_tx_id` | VARCHAR2(64) |  | 시스템 | PG 환불 거래 ID | 환불 대사 |
 | `refund_status` | VARCHAR2(10) |  | 시스템 | REQUESTED / DONE / FAILED | 환불 실패 재시도 |
 | `resold_yn` | CHAR(1) | NN | 시스템 | 재판매 여부 | 재판매율 성과 지표 |
+
+> **제약·비고** 절차: concurrency.md §7.3 늦은 승인 환불, §8 확정 예약 취소 (확정 예약도 purchase_counter 감소)
 
 **관계** reservation_id → [`reservation`](#reservation) · fee_policy_id → [`cancel_fee_policy`](#cancel-fee-policy)
 
@@ -1242,7 +1279,7 @@ CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번�
 | `ci_hash` | VARCHAR2(64) | PK | 시스템 | CI 해시 | 계정이 아닌 사람 단위 합산 |
 | `seat_count` | NUMBER(3) | NN | 시스템 | 현재 보유 매수 | 조건부 UPDATE로 한도 초과 차단 |
 
-> **제약·비고** 갱신: UPDATE purchase_counter SET seat_count = seat_count + :n WHERE scope = :s AND scope_ref_id = :r AND ci_hash = :c AND seat_count + :n <= :max — 1행이면 통과, 0행이면 거부 (행이 없으면 MERGE로 생성) · 취소·만료·결제 실패 시 감소 · 집계 대상: HOLD·PAYMENT_PENDING·CONFIRMED · 행 값이 의심되면 reservation (ci_hash, run_id) 인덱스로 재집계
+> **제약·비고** CHECK(seat_count >= 0) · 증가는 reservation INSERT와 같은 트랜잭션, 감소는 예약 상태 UPDATE가 1행일 때만, 한 트랜잭션의 카운터 행은 (scope, scope_ref_id, ci_hash) 정렬 순서로 갱신, sale_event_id가 NULL이면 PER_HOLIDAY 미적용 · 절차: concurrency.md §10
 
 <a id="g-event"></a>
 ### 이벤트 신뢰성
@@ -1276,17 +1313,19 @@ Oracle
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
 | `event_id` | VARCHAR2(36) | PK | 시스템 | UUID | 소비자 중복 판별 키 |
+| `seq` | NUMBER | UQ, NN | 시스템 | 발행 순서 번호 (outbox_seq) | 같은 예약의 이벤트는 reservation 행 락 뒤에 INSERT되므로 seq가 커밋 순서와 같음. 정렬 기준 |
 | `aggregate_type` | VARCHAR2(20) | NN | 시스템 | RESERVATION / PAYMENT / WAITLIST | 토픽 라우팅 |
 | `aggregate_id` | VARCHAR2(36) | NN | 시스템 | reservation_id, case_id 등 | 숫자·UUID 키 모두 수용 |
 | `partition_key` | VARCHAR2(64) | NN | 시스템 | Kafka 메시지 키 | 결제·취소 이벤트도 reservation_id를 키로 써야 같은 예약의 이벤트 순서 보장 |
+| `shard_no` | NUMBER(2) | NN | 시스템 | 릴레이 샤드 번호 0~15. INSERT 문에서 ORA_HASH(:partition_key, 15)로 계산 | 같은 예약 이벤트는 항상 같은 샤드 → 한 릴레이만 순서대로 발행. 가상 컬럼 대신 일반 컬럼으로 두어 부분 인덱스와 실행 계획을 단순하게 |
 | `event_type` | VARCHAR2(30) | NN | 시스템 | SEAT_HELD, PAYMENT_APPROVED … |  |
 | `payload` | CLOB | NN | 시스템 | 이벤트 본문 (JSON) | 스키마 변경에 유연 |
-| `status` | VARCHAR2(10) | NN | 시스템 | PENDING / PUBLISHED / FAILED | 릴레이가 PENDING만 발행 |
+| `status` | VARCHAR2(10) | NN | 시스템 | PENDING / PUBLISHED / FAILED | FAILED = retry_count가 outbox.max_retry에 도달. 그 샤드를 멈추고 관리자 확인 후 PENDING으로 되돌림 |
 | `retry_count` | NUMBER(2) | NN | 시스템 | 재시도 횟수 | 무한 재시도 방지 |
-| `created_at` | TIMESTAMP |  | 시스템 | 생성 시각 |  |
+| `created_at` | TIMESTAMP | NN | 시스템 | 생성 시각 |  |
 | `published_at` | TIMESTAMP |  | 시스템 | 발행 시각 | 발행 지연 모니터링 |
 
-> **제약·비고** CREATE INDEX ix_outbox_pending ON outbox_event (CASE WHEN status = 'PENDING' THEN created_at END); 발행 대기만 담는 작은 인덱스 · 릴레이: 같은 CASE 식으로 조회 + FOR UPDATE SKIP LOCKED로 여러 인스턴스 병렬 발행 · 정리 배치: PUBLISHED 행을 published_at 기준 app_policy outbox.retention_hours 후 삭제 · CDC(Debezium)는 부하 테스트 후 판단
+> **제약·비고** CREATE SEQUENCE outbox_seq CACHE 1000; · CHECK(shard_no BETWEEN 0 AND 15) · CREATE INDEX ix_outbox_pending ON outbox_event (CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END, CASE WHEN status IN ('PENDING', 'FAILED') THEN seq END); FAILED도 포함 — 샤드 맨 앞이 FAILED면 그 샤드 정지 · 샤드 담당은 Redis 리스 relay:shard:{n} · FOR UPDATE WAIT (SKIP LOCKED 금지) · 절차: concurrency.md §11
 
 <a id="processed-event"></a>
 #### `processed_event` 처리 완료 (Inbox)
@@ -1299,9 +1338,9 @@ Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비
 |---|---|---|---|---|---|
 | `consumer_group` | VARCHAR2(50) | PK | 시스템 | 소비자 그룹 | 그룹마다 독립 처리 |
 | `event_id` | VARCHAR2(36) | PK | 시스템 | 이벤트 ID | 이미 있으면 skip → 멱등 소비 |
-| `processed_at` | TIMESTAMP | NN | 시스템 | 처리 시각 | 보관 기간 후 삭제 |
+| `processed_at` | TIMESTAMP | NN | 시스템 | 처리 시각 | 정리 배치 기준 (inbox.retention_days) |
 
-> **제약·비고** INSERT만 하는 테이블 (updated_at 생략)
+> **제약·비고** INSERT만 하는 테이블 (updated_at 생략) · CREATE INDEX ix_inbox_processed ON processed_event (processed_at); 정리 배치용 · inbox.retention_days가 지난 행 삭제. Kafka 보관 기간보다 길게 둬야 재전달 중복을 막음 · 절차: concurrency.md §12
 
 <a id="saga-instance"></a>
 #### `saga_instance` Saga 진행 상태
@@ -1316,8 +1355,10 @@ Oracle
 | `reservation_id` | NUMBER | FK, NN → reservation | 시스템 |  |  |
 | `current_step` | VARCHAR2(20) | NN | 시스템 | SEAT_HELD / PAYING / CONFIRMED / COMPENSATING | 중단 지점에서 재개·보상 |
 | `status` | VARCHAR2(12) | NN | 시스템 | RUNNING / DONE / COMPENSATED | 좌석 복구율 100% 검증 |
-| `timeout_at` | TIMESTAMP |  | 시스템 | 다음 단계 제한 시각 | 지나면 보상 실행 |
+| `timeout_at` | TIMESTAMP |  | 시스템 | 다음 단계 제한 시각 | = reservation.pay_deadline_at 복사. 지나면 보상 실행 |
 | `updated_at` | TIMESTAMP |  | 시스템 | 갱신 시각 | 멈춘 Saga 탐지 |
+
+> **제약·비고** 생성: 선점 시 SEAT_HELD (§2.2) · 결제 시작 시 PAYING + timeout_at 연장 (§4) · 확정 DONE (§5) · 해제 COMPENSATED (§3, §7) · 절차: concurrency.md
 
 **관계** reservation_id → [`reservation`](#reservation)
 
@@ -1376,11 +1417,11 @@ Oracle
 | `seat_count` | NUMBER(2) | NN | 생성 | 희망 매수 |  |
 | `requested_at` | TIMESTAMP | NN | 생성 | 신청 시각 | 대기 순서 기준 |
 | `offered_at` | TIMESTAMP |  | 시스템 | 배정 제안 시각 |  |
-| `offer_deadline_at` | TIMESTAMP |  | 시스템 | 결제 기한 | 초과 시 다음 대기자 |
+| `offer_deadline_at` | TIMESTAMP |  | 시스템 | 결제 기한 | = 제안으로 만든 예약의 pay_deadline_at 복사. 지나면 다음 대기자 |
 | `offered_reservation_id` | NUMBER | FK → reservation | 시스템 | 제안된 예약 |  |
-| `status` | VARCHAR2(10) | NN | 시스템 | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED |  |
+| `status` | VARCHAR2(10) | NN | 시스템 | WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED | SKIPPED = 제안 시 매수 한도 초과로 건너뜀 |
 
-> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at); 다음 대기자 조회용 · 제안: SELECT … WHERE run_id = :r AND status = 'WAITING' ORDER BY requested_at FOR UPDATE SKIP LOCKED → UPDATE waitlist SET status = 'OFFERED' WHERE waitlist_id = :id AND status = 'WAITING' — 1행일 때만 알림 발송 (중복 제안 방지)
+> **제약·비고** CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at); 다음 대기자 조회용 · 제안 예약도 purchase_counter 증가, 한도에 걸리면 SKIPPED · 절차: concurrency.md §9
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · from_station_id → [`station`](#station) · to_station_id → [`station`](#station) · offered_reservation_id → [`reservation`](#reservation)
 
@@ -1632,10 +1673,11 @@ CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자�
 | `recording_mode` | String |  | 시스템 | SAMPLED / FULL | 평시 샘플링, 위험 시 전체 녹화 → 저장량 제어 |
 | `risk_score_at_start` | Double |  | 시스템 | 시작 시점 점수 | 녹화 모드 결정 근거 |
 | `mask_policy_version` | String |  | 시스템 | 입력 마스킹 규칙 버전 | 어떤 규칙으로 가렸는지 추적 |
-| `retention_until` | Date |  | 시스템 | 보관 기한 (기본 90일) | 개인정보 최소 보관 |
-| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 | 케이스에 연결되면 true |
+| `retention_until` | Date |  | 시스템 | 보관 기한 (기본 90일) | replay_event.expire_at과 같은 값. 개인정보 최소 보관 |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. legal_hold면 필드 없음 |
+| `legal_hold` | Boolean |  | 시스템 | 삭제 보류 | true로 바꾸면 그 세션 replay_event의 expire_at 제거 (TTL 삭제 보류) |
 
-> **제약·비고** 점선은 논리 참조
+> **제약·비고** 점선은 논리 참조 · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 절차: concurrency.md §13
 
 **관계** session_id → [`auth_session`](#auth-session) · member_id → [`member`](#member) · [`replay_event`](#replay-event).session_id → 이 테이블 · [`evidence_snapshot`](#evidence-snapshot).session_id → 이 테이블
 
@@ -1650,6 +1692,7 @@ MongoDB · 🅱 빅데이터
 |---|---|---|---|---|---|
 | `session_id` | String | PK, FK → replay_session | 시스템 | 녹화 세션 | session_id+seq 유니크로 재전송 중복 제거 |
 | `ts` | Date |  | 생성 | 이벤트 시각 (ms) | TTL 기준 |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. 세션 시작 + replay.retention_days로 기록, legal_hold면 필드 제거 |
 | `seq` | Long | PK | 시스템 | 세션 내 순번 | 같은 ms 이벤트도 순서 보장 |
 | `t_offset_ms` | Long |  | 시스템 | 세션 시작부터 경과 시간 | 재생 타임라인 위치, 다중 세션 정렬 |
 | `type` | String |  | 생성 | PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / API / DOMAIN |  |
@@ -1662,7 +1705,7 @@ MongoDB · 🅱 빅데이터
 | `api` | Object |  | 시스템 | { method, path, status, latency_ms } | 화면 행동과 서버 응답을 같이 봄 |
 | `domain_event` | Object |  | 시스템 | { type, ref_id, kafka_event_id } | 클릭 → 좌석 선점 → 결제 → 취소가 한 줄로 |
 
-> **제약·비고** UNIQUE { session_id: 1, seq: 1 } (재전송 중복 제거) + TTL { ts: 1 } 90일 · 시계열 컬렉션은 metaField=session_id면 세션마다 버킷이 생기고 unique 인덱스를 못 걸어 제외 · DOM 녹화(rrweb)는 확장 과제 · 상한: app_policy replay.max_path_points(이벤트당 궤적 점), replay.batch_sec(클라이언트 묶음 전송 간격), replay.max_events_per_session(세션당 이벤트) · 쓰기 경로: 클라이언트 묶음 전송 → API → Kafka → insertMany
+> **제약·비고** UNIQUE { session_id: 1, seq: 1 } (재전송 중복 제거) · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 적재 컨슈머는 저장 전 세션 legal_hold 확인 (보류 중이면 expire_at 없이 저장) · 상한: replay.max_path_points, replay.batch_sec, replay.max_events_per_session · 시계열 컬렉션은 metaField=session_id 버킷 문제와 unique 인덱스 불가로 제외 · DOM 녹화(rrweb)는 확장 과제 · 절차: concurrency.md §13
 
 **관계** session_id → [`replay_session`](#replay-session)
 
@@ -1749,7 +1792,10 @@ MongoDB · 🅱 빅데이터
 | `event_count` | Int |  | 시스템 |  |  |
 | `sha256` | String |  | 시스템 | 이 조각 events 해시 | 조각별 변조 확인. 전체 해시는 suspicious_case.evidence_hash |
 | `frozen_at` | Date |  | 시스템 | 동결 시각 |  |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | 케이스가 열려 있는 동안 없음. 종료 시 closed_at + evidence.retention_days |
 | `frozen_by` | Long | FK → admin_user | 시스템 | 동결한 관리자 |  |
+
+> **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 — 케이스 종료 전에는 삭제되지 않음 · 절차: concurrency.md §13
 
 **관계** case_id → [`suspicious_case`](#suspicious-case) · session_id → [`replay_session`](#replay-session) · frozen_by → [`admin_user`](#admin-user)
 
@@ -1823,13 +1869,14 @@ MongoDB · 🅱 빅데이터
 | `event_type` | String |  | 생성 | VIEW_TRAIN / VIEW_SEAT / QUEUE_ENTER / SEAT_HOLD / PAY / CANCEL |  |
 | `run_id` | Long | FK → train_run | 생성 | 대상 운행 | 인기 열차 쏠림 분석 |
 | `ts` | Date |  | 생성 | 이벤트 시각 (ms) |  |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | TTL 기준. ts + behavior.retention_days로 기록 |
 | `interval_ms` | Int |  | 생성 | 직전 요청과 간격 | 매크로 신호 (사람은 수백 ms~초, 봇은 균일·짧음) |
 | `user_agent` | String |  | 생성 |  | 헤드리스 브라우저 탐지 |
 | `channel` | String |  | 생성 | WEB / APP |  |
 | `response_status` | Int |  | 시스템 | HTTP 상태 | 차단·에러 분석 |
 | `meta` | Object |  | 시스템 | 이벤트별 추가 정보 | 스키마 변경 없이 필드 확장 |
 
-> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, TTL { ts: 1 } (예: 180일) · 쓰기 경로: 앱 → Kafka(behavior-log) → 적재 컨슈머가 insertMany 배치 (app_policy behavior.batch_size). 앱이 Mongo에 직접 쓰지 않음 · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조
+> **제약·비고** 인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 } · TTL { expire_at: 1 }, expireAfterSeconds: 0 · 앱 → Kafka → insertMany 배치 (앱이 Mongo에 직접 쓰지 않음) · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조 · 절차: concurrency.md §13
 
 **관계** member_id → [`member`](#member) · session_id → [`auth_session`](#auth-session) · run_id → [`train_run`](#train-run)
 
@@ -1847,6 +1894,7 @@ MongoDB · 🅱 빅데이터
 | `session_id` | String | FK → auth_session | 시스템 | 로그인 세션 | CCTV 재생과 연결 |
 | `ticket_no` | Long |  | 시스템 | 발급 번호표 | 사용자에게 보인 번호와 대조 |
 | `entered_at` | Date |  | 시스템 | 실제 진입 시각 |  |
+| `expire_at` | Date |  | 시스템 | 삭제 예정 시각 | entered_at + queue_log.retention_days |
 | `risk_score` | Double |  | 시스템 | 진입 시 점수 |  |
 | `penalty_ms` | Long |  | 시스템 | 뒤로 밀린 양 |  |
 | `initial_rank` | Long |  | 시스템 | 조정 전 순번 | 조정이 의도대로 됐는지 검증 |
@@ -1854,7 +1902,7 @@ MongoDB · 🅱 빅데이터
 | `admitted_at` | Date |  | 시스템 | 입장 시각 | 실제 대기 시간 vs 예상 대기 시간 비교 |
 | `left_reason` | String |  | 시스템 | ADMITTED / TIMEOUT / LEFT | 이탈률 |
 
-> **제약·비고** 점선은 논리 참조
+> **제약·비고** TTL { expire_at: 1 }, expireAfterSeconds: 0 · 점선은 논리 참조 · 절차: concurrency.md §13
 
 **관계** member_id → [`member`](#member) · run_id → [`train_run`](#train-run) · session_id → [`auth_session`](#auth-session)
 
@@ -1870,11 +1918,13 @@ Redis
 
 | 컬럼 | 타입 | 키 | 출처 | 설명 | 이유 |
 |---|---|---|---|---|---|
+| `idem:{memberId}:{key}` | STRING+TTL |  | 시스템 | 값: reservation_id (결제는 idem:pay:{reservationId}:{key}) | 같은 버튼 재시도에 같은 예약을 돌려줌 |
+| `relay:shard:{n}` | STRING+TTL |  | 시스템 | 값: 릴레이 인스턴스 ID | 샤드 담당 리스. 갱신 실패 시 그 샤드 처리 즉시 중단 |
 | `queue:{runId}` | ZSET |  | 시스템 | member=memberId, score=진입시각ms + penalty_ms | 위험 점수를 score에 더하면 별도 지연 없이 후순위 처리 |
 | `queue:active:{runId}` | ZSET |  | 시스템 | 입장 허용된 사용자, score=만료시각 | 동시 입장 인원 제한 |
 | `queue:throughput:{runId}` | STRING |  | 시스템 | 초당 입장 처리 수 | 예상 대기시간 = 내 순번 ÷ 처리량 |
 | `queue:pass:{runId}:{memberId}` | STRING+TTL |  | 시스템 | 입장 토큰 (대기열 통과 증명) | 좌석 조회·선점 API가 토큰을 검사해야 대기열 우회 차단 |
-| `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservationId | TTL = 결제 기한, 만료 시 자동 반환 |
+| `seat:hold:{runId}:{seatId}:{segNo}` | STRING+TTL |  | 시스템 | 값: reservation_id (HOLD) 또는 SOLD:reservation_id | 만료 = pay_deadline_at, SOLD는 출발 시각. 해제·연장은 값이 일치할 때만 (compare-and-delete) |
 | `limit:{runId}:{ciHash}` | STRING |  | 시스템 | 구매 매수 | DB 조회 없이 1차 차단 |
 | `limit:event:{saleEventId}:{ciHash}` | STRING |  | 시스템 | 명절 전체 구매 매수 | PER_HOLIDAY 제한의 빠른 체크 |
 | `risk:{subjectType}:{hash}` | STRING |  | 시스템 | final_score 캐시 | 대기열 진입 시 DB 미조회 |
@@ -1883,7 +1933,7 @@ Redis
 | `rate:api:{memberId}` | STRING+TTL |  | 시스템 | 초당 API 호출 수 | 매크로 요청 폭주 1차 차단 |
 | `policy:cache` | HASH |  | 시스템 | app_policy 캐시 | 매 요청마다 DB 조회 방지 |
 
-> **제약·비고** 여러 구간 seat:hold는 Lua 스크립트로 원자적 SET NX · limit:*는 Lua로 INCRBY 후 한도 초과면 즉시 DECRBY하고 거부, 취소·만료·결제 실패 시 DECRBY · limit:* 키가 없으면 purchase_counter 값으로 복원 · Redis는 빠른 1차 판정, 최종 판정은 seat_inventory PK와 purchase_counter
+> **제약·비고** 단일 노드 전제 · Lua 스크립트 hold·release·extend·sold·limit_incr·limit_decr와 DB 롤백 시 보상 규칙, 클러스터 전환 시 해시 태그({runId}, {ciHash})는 concurrency.md §14
 
 <a id="g-ext"></a>
 ### 외부 빅데이터·분석
@@ -2125,7 +2175,7 @@ Oracle
 | 결제 버튼 연타 | UNIQUE(reservation_id, idempotency_key) | 첫 요청만 처리 |
 | 키를 바꿔 결제 재시도 | 예약당 승인 1건 함수 기반 유니크 인덱스 | 두 번째 승인 저장 실패 → 환불 보상 |
 | 결제 실패 | saga_instance 보상 | 좌석 복구 |
-| 결제 기한 초과 | seat:hold TTL + (status, pay_deadline_at) 스캐너 | Redis·DB 양쪽 반환 |
+| 결제 기한 초과 | seat:hold TTL + ix_resv_deadline 부분 인덱스(HOLD·PAYMENT_PENDING의 pay_deadline_at) 스캐너 | Redis·DB 양쪽 반환 |
 | Kafka 중복 전달 | processed_event | 두 번째 skip |
 | DB 저장 후 발행 전 장애 | outbox_event | 재기동 후 발행 |
 | 이벤트 순서 뒤섞임 | partition_key = reservation_id | 순서대로 소비 |
@@ -2140,13 +2190,33 @@ Oracle
 | 이유 없는 녹화 열람 | replay_access_log.purpose, SUPERVISOR 권한 | 감사 기록 |
 | 운영 값 무단 변경 | app_policy.updated_by, app_policy_history | 변경자·이전 값 추적 |
 | 앱 버그로 다른 열차 좌석 선점 | seat_inventory 복합 FK (train_id, seat_id)·(run_id, train_id) | INSERT 실패 |
-| Redis TTL 만료 후 DB에 HOLD 행이 남은 채 재선점 | hold_expires_at 조건부 UPDATE | PK 충돌 없이 이어받음 |
+| Redis TTL 만료 후 DB에 HOLD 행이 남은 채 재선점 | 이전 예약 HOLD→EXPIRED + 그 예약의 HOLD 행 전부 삭제 후 INSERT (concurrency.md §3) | 이어받음, 고아 행 없음 |
 | 좌석을 뺏긴 이전 예약자의 늦은 결제 | 결제 확정 시 seat_inventory.reservation_id 확인 | 거부 후 환불 |
 | 같은 CI로 동시에 예약 2건 | purchase_counter 조건부 UPDATE | 한도 안의 요청만 통과 |
 | Redis 재시작으로 매수 카운터 유실 | purchase_counter에서 limit:* 복원 | 제한 유지 |
 | 오픈 후 outbox 비대 | PENDING 부분 인덱스 + 정리 배치 | 릴레이 속도 유지 |
 | 인스턴스 여러 대가 같은 대기자에게 제안 | FOR UPDATE SKIP LOCKED + WAITING→OFFERED 조건부 UPDATE | 한 번만 제안 |
 | 설정 변경 후 서버마다 다른 값 | app_policy.version 비교 | 다시 로딩 |
+| PG 승인 중에 HOLD 만료 | 결제 시작 시 마감을 GREATEST로 연장 + 결제 중 예약은 재선점 불가 + 스캐너는 PG 조회 후 처리 (§4, §6) | 좌석 유지, 승인된 결제를 만료시키지 않음 |
+| 릴레이 두 대가 같은 예약 이벤트를 나눠 발행 | shard_no + Redis 리스로 샤드 담당 고정, FOR UPDATE WAIT (SKIP LOCKED 금지), seq 순 발행 (§11) | 순서 유지 |
+| 취소와 만료가 동시에 도착 | 예약 상태 조건부 UPDATE 1행일 때만 카운터 감소 | 한 번만 감소 |
+| 같은 CI 첫 예약 2건이 동시에 카운터 행 생성 | INSERT ORA-00001 → UPDATE부터 재시도 | 한도 유지 |
+| Redis 경쟁에서 진 요청 | reservation_id만 발급하고 DB 쓰기 없음 | DB 부하 없음 |
+| 케이스 연결된 녹화가 TTL로 삭제 | legal_hold 시 replay_event.expire_at 제거 | 증거 보존 |
+| 네이티브 UPDATE 후 updated_at이 그대로 | 조건부 UPDATE마다 updated_at = SYSTIMESTAMP | 수정 시각 정확 |
+| 선점 1분 뒤 결제 시작 | GREATEST로 연장 (§4) | 마감이 줄지 않음 |
+| 2석 예약의 1석만 재선점 | 이전 예약의 HOLD 행 전부 삭제, 카운터 전체 감소 (§3) | 고아 HOLD 행 없음 |
+| 재선점과 결제 확정이 같은 행에 동시 도착 | 확정은 구간 수만큼 HOLD→SOLD일 때만 성공 (§5) | 한쪽만 성공 |
+| 같은 idempotency_key로 선점 재시도 | idem 키 조회 후 기존 예약 반환 (§1) | 중복 예약·자기 충돌 없음 |
+| 같은 예약 이벤트 중 하나가 발행 실패 | FAILED도 부분 인덱스에 남기고 그 샤드 정지 (§11.4) | 뒤 이벤트가 앞지르지 않음 |
+| DB가 한도 초과로 롤백 | release.lua·limit_decr.lua·idem 삭제 (§2.3, §14.3) | Redis hold가 TTL까지 남지 않음 |
+| Redis 복원과 INCR가 동시에 | limit_incr.lua가 SET NX 후 INCRBY (§10.4) | 덮어쓰기 없음 |
+| 네이티브 UPDATE 뒤 JPA로 같은 예약 수정 | version = version + 1 (§0.3) | 낙관적 락 충돌 감지 |
+| PG 결과를 모르는 채 마감 경과 | PG 조회 먼저, 모르면 자동 만료 없이 알림 (§6) | 승인된 결제를 만료로 보상하지 않음 |
+| 서로 다른 CI 재선점 2건이 교차 | 카운터 행을 (scope, scope_ref_id, ci_hash) 정렬 순서로 갱신 (§10.3) | 데드락 없음 |
+| 확정 예약 취소 | CONFIRMED→CANCELED 1행일 때만 카운터·limit 감소 (§8) | 한도 반환 |
+| 취소표 대기자가 한도 초과 | SKIPPED 후 다음 대기자 (§9) | 제안이 막히지 않음 |
+| legal_hold 이후 도착한 녹화 이벤트 | 컨슈머가 legal_hold 확인 후 expire_at 없이 저장 (§13.2) | 삭제되지 않음 |
 
 ## 가상 데이터 생성
 
@@ -2185,6 +2255,8 @@ Oracle
 | v3 | 점검: 대기열 입장 토큰, replay_event 일반 컬렉션화, 증거 조각 저장, 멱등 키 범위, partition_key, admin_user·sale_event·cancel_fee_policy·ext_dataset 추가 (53개) |
 | v4 | 팀 결정 예시값(app_policy·예시 행), 관리자 로그인·세션 구분, 명절 매수 Redis 키, 확장 예정 테이블 4개, DDL 개선(CHECK·FK 인덱스·이름 축약·예시 INSERT) (58개) |
 | v5 | 팀 검토 반영: seat_inventory 열차 일치 복합 FK·HOLD 만료 재선점, purchase_counter, outbox 부분 인덱스·정리, reservation·waitlist 인덱스, 수정 없는 테이블 updated_at 생략, 로그 Kafka 적재·녹화 상한, app_policy version·이력, ci_hash 불변, 위험 대상 코드 CHECK, model_run 예시 행 보정 (60개) |
+| v6 | 팀 2차 검토 반영: 결제 시작 시 마감 연장, 마감 시각 원천 규칙, outbox shard_no·샤드별 릴레이, 예매 흐름 순서(ID 발급 → Redis 경쟁 → 한 트랜잭션 INSERT), 참조 전용 테이블 FK 인덱스 생략·ix_resv_ci_run 제거, purchase_counter 동시성 규칙·CHECK, Mongo expire_at TTL, processed_event 정리 인덱스, updated_at 규칙, Redis 클러스터 메모 |
+| v7 | 팀 3차 검토 반영 + 동시성 절차를 docs/concurrency.md로 분리: 마감 연장 GREATEST·PG 180+60초, 재선점 시 이전 예약 HOLD 행 전부 삭제, 멱등 키 선조회, outbox seq·시퀀스·FAILED 샤드 정지·Redis 리스·FOR UPDATE WAIT, Redis 보상·limit 복원 SET NX, version 증가 규칙, PG 결과 미확인 만료 금지, 카운터 정렬 갱신, 취소·취소표 카운터, Mongo expire_at 확대·legal_hold 확인, Redis 클러스터 태그 {runId}, 비고 축약 |
 
 ## 참고 자료
 

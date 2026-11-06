@@ -1,7 +1,10 @@
--- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v5)
+-- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v7)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
+
+-- 시퀀스
+CREATE SEQUENCE outbox_seq CACHE 1000;
 
 CREATE TABLE station (
   station_id                 VARCHAR2(10) NOT NULL,
@@ -310,7 +313,7 @@ COMMENT ON COLUMN seat_inventory.seat_id IS '좌석';
 COMMENT ON COLUMN seat_inventory.segment_no IS '구간 번호 (역 순번 i → i+1 = i) / 구간 단위 점유';
 COMMENT ON COLUMN seat_inventory.reservation_id IS '점유 예약 / 반환 시 이 예약 행만 삭제';
 COMMENT ON COLUMN seat_inventory.status IS 'HOLD / SOLD / 선점과 확정 구분';
-COMMENT ON COLUMN seat_inventory.hold_expires_at IS 'HOLD 만료 시각 (SOLD면 null) / Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준';
+COMMENT ON COLUMN seat_inventory.hold_expires_at IS 'HOLD 만료 시각 (SOLD면 null) / = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준';
 COMMENT ON COLUMN seat_inventory.created_at IS '생성 시각';
 COMMENT ON COLUMN seat_inventory.updated_at IS '수정 시각';
 CREATE INDEX ix_seatinv_hold ON seat_inventory (CASE WHEN status = 'HOLD' THEN hold_expires_at END);
@@ -354,7 +357,7 @@ COMMENT ON COLUMN reservation.status IS 'HOLD / PAYMENT_PENDING / CONFIRMED / CA
 COMMENT ON COLUMN reservation.channel IS 'WEB / APP / 채널별 트래픽 분석';
 COMMENT ON COLUMN reservation.source IS 'NORMAL / WAITLIST / 취소표 재배정 여부';
 COMMENT ON COLUMN reservation.held_at IS '좌석 선점 시각';
-COMMENT ON COLUMN reservation.pay_deadline_at IS '결제 기한 / 초과 시 자동 반환';
+COMMENT ON COLUMN reservation.pay_deadline_at IS '결제 기한 (마감 시각의 원천) / seat_inventory.hold_expires_at, seat:hold TTL, saga_instance.timeout_at, waitlist.offer_deadline_at은 이 값을 한 번 계산해 복사. 바꿀 땐 다섯 곳을 같은 트랜잭션·같은 값으로';
 COMMENT ON COLUMN reservation.confirmed_at IS '확정 시각 / 구매→취소 시간 계산 시작점';
 COMMENT ON COLUMN reservation.canceled_at IS '취소 시각';
 COMMENT ON COLUMN reservation.idempotency_key IS '클라이언트 요청 키 / 따닥 클릭·재시도 시 중복 예약 방지. UNIQUE 범위는 회원 단위';
@@ -362,7 +365,6 @@ COMMENT ON COLUMN reservation.version IS '낙관적 락 버전 / 락 방식 성�
 COMMENT ON COLUMN reservation.created_at IS '생성 시각';
 COMMENT ON COLUMN reservation.updated_at IS '수정 시각';
 CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN status IN ('HOLD', 'PAYMENT_PENDING') THEN pay_deadline_at END);
-CREATE INDEX ix_resv_ci_run ON reservation (ci_hash, run_id);
 
 CREATE TABLE reservation_seat (
   reservation_id             NUMBER NOT NULL,
@@ -472,9 +474,11 @@ COMMENT ON COLUMN cancellation.updated_at IS '수정 시각';
 
 CREATE TABLE outbox_event (
   event_id                   VARCHAR2(36) NOT NULL,
+  seq                        NUMBER NOT NULL,
   aggregate_type             VARCHAR2(20) NOT NULL,
   aggregate_id               VARCHAR2(36) NOT NULL,
   partition_key              VARCHAR2(64) NOT NULL,
+  shard_no                   NUMBER(2) NOT NULL,
   event_type                 VARCHAR2(30) NOT NULL,
   payload                    CLOB NOT NULL,
   status                     VARCHAR2(10) NOT NULL,
@@ -483,22 +487,26 @@ CREATE TABLE outbox_event (
   published_at               TIMESTAMP,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_outbox_event PRIMARY KEY (event_id),
+  CONSTRAINT uq_outbox_event_seq UNIQUE (seq),
+  CONSTRAINT ck_outbox_event_r1 CHECK (shard_no BETWEEN 0 AND 15),
   CONSTRAINT ck_outbox_event_aggregate_type CHECK (aggregate_type IN ('RESERVATION', 'PAYMENT', 'WAITLIST')),
   CONSTRAINT ck_outbox_event_status CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED'))
 );
 COMMENT ON TABLE outbox_event IS 'Outbox 이벤트 - 비즈니스 변경과 같은 트랜잭션에서 INSERT → 이벤트 유실 0건.';
 COMMENT ON COLUMN outbox_event.event_id IS 'UUID / 소비자 중복 판별 키';
+COMMENT ON COLUMN outbox_event.seq IS '발행 순서 번호 (outbox_seq) / 같은 예약의 이벤트는 reservation 행 락 뒤에 INSERT되므로 seq가 커밋 순서와 같음. 정렬 기준';
 COMMENT ON COLUMN outbox_event.aggregate_type IS 'RESERVATION / PAYMENT / WAITLIST / 토픽 라우팅';
 COMMENT ON COLUMN outbox_event.aggregate_id IS 'reservation_id, case_id 등 / 숫자·UUID 키 모두 수용';
 COMMENT ON COLUMN outbox_event.partition_key IS 'Kafka 메시지 키 / 결제·취소 이벤트도 reservation_id를 키로 써야 같은 예약의 이벤트 순서 보장';
+COMMENT ON COLUMN outbox_event.shard_no IS '릴레이 샤드 번호 0~15. INSERT 문에서 ORA_HASH(:partition_key, 15)로 계산 / 같은 예약 이벤트는 항상 같은 샤드 → 한 릴레이만 순서대로 발행. 가상 컬럼 대신 일반 컬럼으로 두어 부분 인덱스와 실행 계획을 단순하게';
 COMMENT ON COLUMN outbox_event.event_type IS 'SEAT_HELD, PAYMENT_APPROVED …';
 COMMENT ON COLUMN outbox_event.payload IS '이벤트 본문 (JSON) / 스키마 변경에 유연';
-COMMENT ON COLUMN outbox_event.status IS 'PENDING / PUBLISHED / FAILED / 릴레이가 PENDING만 발행';
+COMMENT ON COLUMN outbox_event.status IS 'PENDING / PUBLISHED / FAILED / FAILED = retry_count가 outbox.max_retry에 도달. 그 샤드를 멈추고 관리자 확인 후 PENDING으로 되돌림';
 COMMENT ON COLUMN outbox_event.retry_count IS '재시도 횟수 / 무한 재시도 방지';
 COMMENT ON COLUMN outbox_event.created_at IS '생성 시각';
 COMMENT ON COLUMN outbox_event.published_at IS '발행 시각 / 발행 지연 모니터링';
 COMMENT ON COLUMN outbox_event.updated_at IS '수정 시각';
-CREATE INDEX ix_outbox_pending ON outbox_event (CASE WHEN status = 'PENDING' THEN created_at END);
+CREATE INDEX ix_outbox_pending ON outbox_event (CASE WHEN status IN ('PENDING', 'FAILED') THEN shard_no END, CASE WHEN status IN ('PENDING', 'FAILED') THEN seq END);
 
 CREATE TABLE processed_event (
   consumer_group             VARCHAR2(50) NOT NULL,
@@ -510,8 +518,9 @@ CREATE TABLE processed_event (
 COMMENT ON TABLE processed_event IS '처리 완료 (Inbox) - Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비.';
 COMMENT ON COLUMN processed_event.consumer_group IS '소비자 그룹 / 그룹마다 독립 처리';
 COMMENT ON COLUMN processed_event.event_id IS '이벤트 ID / 이미 있으면 skip → 멱등 소비';
-COMMENT ON COLUMN processed_event.processed_at IS '처리 시각 / 보관 기간 후 삭제';
+COMMENT ON COLUMN processed_event.processed_at IS '처리 시각 / 정리 배치 기준 (inbox.retention_days)';
 COMMENT ON COLUMN processed_event.created_at IS '생성 시각';
+CREATE INDEX ix_inbox_processed ON processed_event (processed_at);
 
 CREATE TABLE saga_instance (
   saga_id                    VARCHAR2(36) NOT NULL,
@@ -528,7 +537,7 @@ CREATE TABLE saga_instance (
 COMMENT ON TABLE saga_instance IS 'Saga 진행 상태 - 예약→결제→확정 흐름의 진행 단계. 중단 지점에서 재개하거나 보상.';
 COMMENT ON COLUMN saga_instance.current_step IS 'SEAT_HELD / PAYING / CONFIRMED / COMPENSATING / 중단 지점에서 재개·보상';
 COMMENT ON COLUMN saga_instance.status IS 'RUNNING / DONE / COMPENSATED / 좌석 복구율 100% 검증';
-COMMENT ON COLUMN saga_instance.timeout_at IS '다음 단계 제한 시각 / 지나면 보상 실행';
+COMMENT ON COLUMN saga_instance.timeout_at IS '다음 단계 제한 시각 / = reservation.pay_deadline_at 복사. 지나면 보상 실행';
 COMMENT ON COLUMN saga_instance.updated_at IS '갱신 시각 / 멈춘 Saga 탐지';
 COMMENT ON COLUMN saga_instance.created_at IS '생성 시각';
 
@@ -549,7 +558,7 @@ CREATE TABLE waitlist (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_waitlist PRIMARY KEY (waitlist_id),
   CONSTRAINT ck_waitlist_seat_grade CHECK (seat_grade IN ('GENERAL', 'FIRST')),
-  CONSTRAINT ck_waitlist_status CHECK (status IN ('WAITING', 'OFFERED', 'ACCEPTED', 'EXPIRED', 'CANCELED'))
+  CONSTRAINT ck_waitlist_status CHECK (status IN ('WAITING', 'OFFERED', 'ACCEPTED', 'EXPIRED', 'CANCELED', 'SKIPPED'))
 );
 COMMENT ON TABLE waitlist IS '취소표 대기 - 취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.';
 COMMENT ON COLUMN waitlist.from_station_id IS '희망 승차역 / 구간 일치 취소표만 배정';
@@ -558,9 +567,9 @@ COMMENT ON COLUMN waitlist.seat_grade IS 'GENERAL / FIRST / 희망 등급. 좌�
 COMMENT ON COLUMN waitlist.seat_count IS '희망 매수';
 COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / 대기 순서 기준';
 COMMENT ON COLUMN waitlist.offered_at IS '배정 제안 시각';
-COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / 초과 시 다음 대기자';
+COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / = 제안으로 만든 예약의 pay_deadline_at 복사. 지나면 다음 대기자';
 COMMENT ON COLUMN waitlist.offered_reservation_id IS '제안된 예약';
-COMMENT ON COLUMN waitlist.status IS 'WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED';
+COMMENT ON COLUMN waitlist.status IS 'WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED / SKIPPED = 제안 시 매수 한도 초과로 건너뜀';
 COMMENT ON COLUMN waitlist.created_at IS '생성 시각';
 COMMENT ON COLUMN waitlist.updated_at IS '수정 시각';
 CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at);
@@ -1052,6 +1061,7 @@ CREATE TABLE purchase_counter (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_purchase_counter PRIMARY KEY (scope, scope_ref_id, ci_hash),
+  CONSTRAINT ck_purchase_counter_r1 CHECK (seat_count >= 0),
   CONSTRAINT ck_purchase_counter_scope CHECK (scope IN ('PER_RUN', 'PER_HOLIDAY'))
 );
 COMMENT ON TABLE purchase_counter IS '매수 카운터 - CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번으로 원자적으로 처리하고, Redis 카운터가 사라지면 여기서 복원한다.';
@@ -1082,30 +1092,22 @@ COMMENT ON COLUMN app_policy_history.changed_by IS '변경한 관리자 / 시스
 COMMENT ON COLUMN app_policy_history.changed_at IS '변경 시각';
 COMMENT ON COLUMN app_policy_history.created_at IS '생성 시각';
 
--- 외래키와 외래키 인덱스 (Oracle은 FK에 인덱스를 자동으로 만들지 않음)
+-- 외래키와 외래키 인덱스 (Oracle은 FK에 인덱스를 자동으로 만들지 않음. 참조 전용 테이블을 가리키는 FK는 인덱스 생략)
 ALTER TABLE route ADD CONSTRAINT fk_route_origin_station_id FOREIGN KEY (origin_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_route_origin_station_id ON route (origin_station_id);
 ALTER TABLE route ADD CONSTRAINT fk_route_dest_station_id FOREIGN KEY (dest_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_route_dest_station_id ON route (dest_station_id);
 ALTER TABLE route_station ADD CONSTRAINT fk_route_station_route_id FOREIGN KEY (route_id) REFERENCES route (route_id);
 ALTER TABLE route_station ADD CONSTRAINT fk_route_station_station_id FOREIGN KEY (station_id) REFERENCES station (station_id);
-CREATE INDEX ix_route_station_station_id ON route_station (station_id);
 ALTER TABLE train ADD CONSTRAINT fk_train_route_id FOREIGN KEY (route_id) REFERENCES route (route_id);
-CREATE INDEX ix_train_route_id ON train (route_id);
 ALTER TABLE train_car ADD CONSTRAINT fk_train_car_train_id FOREIGN KEY (train_id) REFERENCES train (train_id);
 ALTER TABLE train_car ADD CONSTRAINT fk_train_car_car_type_code FOREIGN KEY (car_type_code) REFERENCES car_type (car_type_code);
-CREATE INDEX ix_train_car_car_type_code ON train_car (car_type_code);
 ALTER TABLE seat ADD CONSTRAINT fk_seat_train_id FOREIGN KEY (train_id) REFERENCES train (train_id);
 ALTER TABLE train_run ADD CONSTRAINT fk_train_run_train_id FOREIGN KEY (train_id) REFERENCES train (train_id);
 ALTER TABLE train_run ADD CONSTRAINT fk_train_run_sale_event_id FOREIGN KEY (sale_event_id) REFERENCES sale_event (sale_event_id);
 CREATE INDEX ix_train_run_sale_event_id ON train_run (sale_event_id);
 ALTER TABLE train_stop ADD CONSTRAINT fk_train_stop_run_id FOREIGN KEY (run_id) REFERENCES train_run (run_id);
 ALTER TABLE train_stop ADD CONSTRAINT fk_train_stop_station_id FOREIGN KEY (station_id) REFERENCES station (station_id);
-CREATE INDEX ix_train_stop_station_id ON train_stop (station_id);
 ALTER TABLE fare ADD CONSTRAINT fk_fare_from_station_id FOREIGN KEY (from_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_fare_from_station_id ON fare (from_station_id);
 ALTER TABLE fare ADD CONSTRAINT fk_fare_to_station_id FOREIGN KEY (to_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_fare_to_station_id ON fare (to_station_id);
 ALTER TABLE purchase_limit_policy ADD CONSTRAINT fk_purchase_limit_polic_88n0fo FOREIGN KEY (sale_event_id) REFERENCES sale_event (sale_event_id);
 CREATE INDEX ix_purchase_limit_polic_k3jmve ON purchase_limit_policy (sale_event_id);
 ALTER TABLE payment_method ADD CONSTRAINT fk_payment_method_member_id FOREIGN KEY (member_id) REFERENCES member (member_id);
@@ -1122,9 +1124,7 @@ ALTER TABLE reservation ADD CONSTRAINT fk_reservation_member_id FOREIGN KEY (mem
 ALTER TABLE reservation ADD CONSTRAINT fk_reservation_run_id FOREIGN KEY (run_id) REFERENCES train_run (run_id);
 CREATE INDEX ix_reservation_run_id ON reservation (run_id);
 ALTER TABLE reservation ADD CONSTRAINT fk_reservation_from_station_id FOREIGN KEY (from_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_reservation_from_station_id ON reservation (from_station_id);
 ALTER TABLE reservation ADD CONSTRAINT fk_reservation_to_station_id FOREIGN KEY (to_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_reservation_to_station_id ON reservation (to_station_id);
 ALTER TABLE reservation_seat ADD CONSTRAINT fk_reservation_seat_kj4yk8 FOREIGN KEY (reservation_id) REFERENCES reservation (reservation_id);
 ALTER TABLE reservation_seat ADD CONSTRAINT fk_reservation_seat_seat_id FOREIGN KEY (seat_id) REFERENCES seat (seat_id);
 CREATE INDEX ix_reservation_seat_seat_id ON reservation_seat (seat_id);
@@ -1143,9 +1143,7 @@ ALTER TABLE waitlist ADD CONSTRAINT fk_waitlist_member_id FOREIGN KEY (member_id
 CREATE INDEX ix_waitlist_member_id ON waitlist (member_id);
 ALTER TABLE waitlist ADD CONSTRAINT fk_waitlist_run_id FOREIGN KEY (run_id) REFERENCES train_run (run_id);
 ALTER TABLE waitlist ADD CONSTRAINT fk_waitlist_from_station_id FOREIGN KEY (from_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_waitlist_from_station_id ON waitlist (from_station_id);
 ALTER TABLE waitlist ADD CONSTRAINT fk_waitlist_to_station_id FOREIGN KEY (to_station_id) REFERENCES station (station_id);
-CREATE INDEX ix_waitlist_to_station_id ON waitlist (to_station_id);
 ALTER TABLE waitlist ADD CONSTRAINT fk_waitlist_16o3t9 FOREIGN KEY (offered_reservation_id) REFERENCES reservation (reservation_id);
 CREATE INDEX ix_waitlist_10yqnf ON waitlist (offered_reservation_id);
 ALTER TABLE notification ADD CONSTRAINT fk_notification_member_id FOREIGN KEY (member_id) REFERENCES member (member_id);
@@ -1215,6 +1213,18 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.max_concurrent_hash', '32', 1, 'NUMBER', '동시 Argon2 검증 수 (해시 1회 약 19MiB)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.lock_after_failures', '5', 1, 'NUMBER', '연속 실패 시 잠금 기준');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('auth.lock_minutes', '15', 1, 'NUMBER', '잠금 시간(분)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_timeout_sec', '180', 1, 'NUMBER', 'PG 승인 요청 타임아웃(초). 앱카드·ISP 인증 시간 포함');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.extend_grace_sec', '60', 1, 'NUMBER', '결제 시작 시 마감 연장 여유(초). 새 마감 = GREATEST(기존, 지금 + 타임아웃 + 여유)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('outbox.shard_count', '16', 1, 'NUMBER', 'outbox 샤드 수 (INSERT의 ORA_HASH 식·CHECK와 같아야 함)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inbox.retention_days', '7', 1, 'NUMBER', 'processed_event 보관 기간 (Kafka 보관 기간보다 길게)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('behavior.retention_days', '180', 1, 'NUMBER', 'behavior_log 보관 기간 (expire_at 계산)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_unknown_max_min', '30', 1, 'NUMBER', 'PG 결과를 모를 때 관리자 알림까지 기다리는 시간(분). 자동 만료하지 않음');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('idem.ttl_sec', '600', 1, 'NUMBER', '멱등 키 보관 시간');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('relay.lease_sec', '15', 1, 'NUMBER', 'outbox 샤드 리스 시간');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('relay.lock_wait_sec', '5', 1, 'NUMBER', '릴레이 FOR UPDATE WAIT 시간');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('outbox.max_retry', '5', 1, 'NUMBER', '발행 재시도 한도. 넘으면 FAILED + 샤드 정지');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue_log.retention_days', '30', 1, 'NUMBER', 'queue_log 보관 기간');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('evidence.retention_days', '365', 1, 'NUMBER', '케이스 종료 후 증거 보관 기간');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');

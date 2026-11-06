@@ -1,0 +1,1632 @@
+<meta charset="utf-8">
+<title>FairRail ERD</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: 제도판 캔버스(점 격자) 위에 테이블 노드, 오른쪽에 속성 패널. 좁은 화면에선 패널이 하단 시트로. */
+:root{
+  --bg:#e9ecea; --canvas:#f4f6f4; --surface:#ffffff; --surface2:#f2f4f2;
+  --fg:#18211d; --muted:#5a6661; --line:#d3d9d5; --grid:#c4ccc7;
+  --accent:#1d6b58; --accent-fg:#ffffff; --link:#7b8a83; --danger:#b3392f;
+  --shadow:0 1px 2px rgba(20,30,25,.08),0 4px 14px rgba(20,30,25,.06);
+  --g-ref:#2a7f7b; --g-member:#7f52a3; --g-resv:#c4661a; --g-event:#3567b4;
+  --g-wait:#a07a0e; --g-risk:#a8386f; --g-mongo:#3f8a45; --g-redis:#c8403a; --g-synth:#6b7a20; --g-auth:#8a6233; --g-replay:#0e86a8; --g-ext:#5d6a73;
+  --f-ui:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1312; --canvas:#141917; --surface:#1b211f; --surface2:#222a27;
+  --fg:#e4eae7; --muted:#97a49e; --line:#2e3733; --grid:#2a332f;
+  --accent:#52c09f; --accent-fg:#0d1a15; --link:#6e7d76; --danger:#e2675c;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  --g-ref:#4fb0aa; --g-member:#ab84cc; --g-resv:#e08a45; --g-event:#6d98dc;
+  --g-wait:#cfa43a; --g-risk:#d46a9e; --g-mongo:#6fb873; --g-redis:#e8716a; --g-synth:#a2b24c; --g-auth:#c99c64; --g-replay:#4cbcdc; --g-ext:#97a5ae;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1312; --canvas:#141917; --surface:#1b211f; --surface2:#222a27;
+  --fg:#e4eae7; --muted:#97a49e; --line:#2e3733; --grid:#2a332f;
+  --accent:#52c09f; --accent-fg:#0d1a15; --link:#6e7d76; --danger:#e2675c;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  --g-ref:#4fb0aa; --g-member:#ab84cc; --g-resv:#e08a45; --g-event:#6d98dc;
+  --g-wait:#cfa43a; --g-risk:#d46a9e; --g-mongo:#6fb873; --g-redis:#e8716a; --g-synth:#a2b24c; --g-auth:#c99c64; --g-replay:#4cbcdc; --g-ext:#97a5ae;
+  color-scheme:dark}
+
+[hidden]{display:none!important} /* 파일로 직접 열 때도 모달이 숨겨지도록 */
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;overflow:hidden}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{height:100%;display:flex;flex-direction:column;gap:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+
+/* 상단 바 */
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+.brand h1{font-size:18px;font-weight:700;margin:0;letter-spacing:-.01em}
+.brand .meta{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.search{position:relative}
+.search input{width:220px;max-width:46vw;height:34px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:0 10px 0 30px}
+.search svg{position:absolute;left:9px;top:9px;width:16px;height:16px;stroke:var(--muted);fill:none;stroke-width:2}
+.btn{height:34px;padding:0 12px;border:1px solid var(--line);background:var(--surface);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+.btn.danger{color:var(--danger)}
+.btn.danger.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
+.btn.sm{height:28px;padding:0 9px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:default}
+
+/* 그룹 필터 */
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chip{flex:none;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:12.5px}
+.chip i{width:9px;height:9px;border-radius:3px;background:var(--gc)}
+.chip b{font-weight:500;color:var(--muted);font-family:var(--f-mono);font-size:11px}
+.chip.off{opacity:.45}
+.chip.off i{background:transparent;border:1.5px solid var(--gc)}
+
+/* 본문 */
+.main{flex:1;min-height:0;display:flex;gap:10px}
+.stage{position:relative;flex:1;min-width:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;touch-action:none;cursor:grab;
+  background-color:var(--canvas);background-image:radial-gradient(var(--grid) 1px,transparent 1.2px)}
+.stage.panning{cursor:grabbing}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+#links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.lk{fill:none;stroke:var(--link);stroke-width:1.4}
+.lk.logical{stroke-dasharray:5 4}
+.lk.on{stroke:var(--accent);stroke-width:2.2}
+.lk.dim{opacity:.18}
+.mk{fill:none;stroke:context-stroke;stroke-width:1.4}
+
+/* 노드 */
+.node{position:absolute;width:272px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);cursor:pointer;user-select:none;transition:opacity .15s}
+.node .nh{height:36px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);border-radius:8px 8px 0 0;
+  background:color-mix(in oklab,var(--gc) 16%,var(--surface));border-top:3px solid var(--gc)}
+.node .nn{font-family:var(--f-mono);font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .nk{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:auto}
+.node .rows{padding:3px 0}
+.row{height:22px;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px}
+.row:hover{background:var(--surface2)}
+.row .key{width:34px;flex:none;font-family:var(--f-mono);font-size:9px;font-weight:500;letter-spacing:.02em;color:var(--muted);white-space:nowrap;overflow:hidden}
+.row .key.pk{color:var(--g-wait)}
+.row .key.fk{color:var(--g-event)}
+.row .cn{font-family:var(--f-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .ct{margin-left:auto;font-family:var(--f-mono);font-size:10.5px;color:var(--muted);white-space:nowrap;padding-left:6px}
+.row.hit{background:color-mix(in oklab,var(--accent) 18%,transparent)}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in oklab,var(--accent) 45%,transparent),var(--shadow)}
+.node.rel{border-color:color-mix(in oklab,var(--accent) 50%,var(--line))}
+.node.dim{opacity:.32}
+.node.faded{opacity:.09;pointer-events:none;filter:grayscale(1)}
+.lk.faded{opacity:.05}
+.lk.planned{stroke-dasharray:2 4}
+.node.planned{border-style:dashed;background:color-mix(in oklab,var(--surface) 72%,var(--canvas))}
+.node.planned .nh{border-top-style:dashed;background:color-mix(in oklab,var(--gc) 8%,var(--surface))}
+.node .tag.plan{border-style:dashed}
+.samples{overflow-x:auto;border:1px solid var(--line);border-radius:7px}
+table.dt{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+table.dt th,table.dt td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;line-height:1.5}
+table.dt th{font-size:11.5px;font-weight:600;color:var(--muted);background:var(--surface2);white-space:nowrap;position:sticky;top:0}
+table.dt td.mono{font-family:var(--f-mono);font-size:11.5px;white-space:nowrap}
+table.dt input{width:100%;min-width:90px;border:1px solid var(--line);background:var(--surface2);border-radius:6px;padding:5px 7px}
+.tref{font:inherit;font-family:var(--f-mono);font-size:11.5px;color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:color-mix(in oklab,var(--accent) 40%,transparent);text-underline-offset:2px}
+.dbody{overflow:auto;padding:12px;flex:1;min-height:0}
+.dbody .p{margin:0 0 10px}
+.stat{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:color-mix(in oklab,var(--g-wait) 18%,var(--surface));color:color-mix(in oklab,var(--g-wait) 70%,var(--fg));white-space:nowrap}
+.dec-list{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.dec-list div{display:flex;gap:8px;justify-content:space-between;border-bottom:1px dashed var(--line);padding-bottom:4px}
+.dec-list span:last-child{color:var(--muted);text-align:right}
+.node .tag{flex:none;font-family:var(--f-mono);font-size:9px;font-weight:500;letter-spacing:.05em;padding:1px 4px;border-radius:4px;border:1px solid color-mix(in oklab,var(--muted) 55%,transparent);color:var(--muted)}
+.node .tag.big{border-color:color-mix(in oklab,var(--gc) 60%,transparent);color:color-mix(in oklab,var(--gc) 75%,var(--fg))}
+.btn[aria-pressed="true"]{background:color-mix(in oklab,var(--accent) 16%,var(--surface));border-color:var(--accent)}
+
+.zoombox{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:3px;box-shadow:var(--shadow)}
+.zoombox button{width:32px;height:30px;border:0;background:transparent;border-radius:7px;cursor:pointer;font-size:16px}
+.zoombox button:hover{background:var(--surface2)}
+.zoombox .pct{min-width:52px;text-align:center;font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums;cursor:pointer;border:0;background:transparent}
+.zoombox .fit{font-size:12px;width:auto;padding:0 10px}
+.hint{position:absolute;left:12px;bottom:12px;font-size:12px;color:var(--muted);background:color-mix(in oklab,var(--surface) 85%,transparent);padding:5px 9px;border-radius:7px;border:1px solid var(--line)}
+
+/* 패널 */
+.panel{width:380px;flex:none;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.ph{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.ph h2{margin:0;font-size:15px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph .x{margin-left:auto;width:30px;height:30px;border:0;background:transparent;border-radius:7px;cursor:pointer;font-size:18px;color:var(--muted)}
+.ph .x:hover{background:var(--surface2)}
+.pb{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:16px}
+.gtag{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 8px;border-radius:6px;background:color-mix(in oklab,var(--gc) 16%,var(--surface));color:color-mix(in oklab,var(--gc) 70%,var(--fg));white-space:nowrap}
+.sec{display:flex;flex-direction:column;gap:8px}
+.sec>h3{margin:0;font-size:11.5px;font-weight:600;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.sec>h3 .btn{margin-left:auto}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld>span{font-size:12px;color:var(--muted)}
+.fld input,.fld select,.fld textarea{width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:7px;padding:7px 9px;min-width:0}
+.fld textarea{resize:vertical;min-height:58px;line-height:1.5}
+.fld input.mono{font-family:var(--f-mono);font-size:13px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.p{margin:0;line-height:1.6;color:var(--fg)}
+.p.muted{color:var(--muted);font-size:13px}
+
+.rel-list{display:flex;flex-direction:column;gap:4px}
+.rel-item{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:12px;padding:6px 8px;border-radius:6px;background:var(--surface2);cursor:pointer;border:1px solid transparent;text-align:left}
+.rel-item:hover{border-color:var(--line)}
+.rel-item .dir{font-family:var(--f-ui);font-size:11px;color:var(--muted);width:30px;flex:none}
+
+details.col{border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+details.col[open]{background:var(--surface2)}
+details.col>summary{list-style:none;display:flex;align-items:center;gap:6px;padding:7px 9px;cursor:pointer;font-size:12.5px}
+details.col>summary::-webkit-details-marker{display:none}
+details.col>summary .cn{font-family:var(--f-mono);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.col>summary .ct{margin-left:auto;font-family:var(--f-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+details.col>summary .key{font-family:var(--f-mono);font-size:10px;width:34px;flex:none;color:var(--muted)}
+details.col .cbody{padding:4px 9px 10px;display:flex;flex-direction:column;gap:8px}
+.keys{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px}
+.keys label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.colacts{display:flex;gap:6px}
+.colacts .btn.danger{margin-left:auto}
+.desc-view{font-size:12.5px;line-height:1.55;color:var(--muted);margin:0}
+.desc-view b{color:var(--fg);font-weight:500}
+
+.legend{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:12.5px;align-items:center}
+.legend svg{width:46px;height:12px;overflow:visible}
+.ov-groups{display:flex;flex-direction:column;gap:4px}
+.ov-g{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;border:1px solid var(--line);background:var(--surface);cursor:pointer;text-align:left}
+.ov-g:hover{background:var(--surface2)}
+.ov-g i{width:10px;height:10px;border-radius:3px;background:var(--gc);flex:none}
+.ov-g b{margin-left:auto;font-weight:400;font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:13px;line-height:1.5;color:var(--muted)}
+kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--surface2);color:var(--fg)}
+
+/* 모달 */
+.modal{position:fixed;inset:0;background:rgba(10,16,13,.45);display:flex;align-items:center;justify-content:center;z-index:50;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.mbox{width:min(760px,100%);max-height:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow)}
+.mtabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.mtab{height:30px;padding:0 12px;border-radius:7px;border:1px solid transparent;background:transparent;cursor:pointer;font-size:13px}
+.mtab.on{background:var(--surface2);border-color:var(--line);font-weight:600}
+.mtabs .x{margin-left:auto}
+.mbody{padding:12px;display:flex;flex-direction:column;gap:10px;min-height:0;flex:1}
+.mbody textarea{flex:1;min-height:320px;width:100%;font-family:var(--f-mono);font-size:12px;line-height:1.5;border:1px solid var(--line);background:var(--surface2);border-radius:8px;padding:10px;resize:vertical;white-space:pre;overflow:auto}
+.mfoot{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mfoot .p{margin-right:auto}
+
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:60}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media (max-width:820px){
+  .panel{position:fixed;left:0;right:0;bottom:0;width:auto;height:62%;border-radius:14px 14px 0 0;z-index:40;box-shadow:0 -8px 30px rgba(0,0,0,.2);
+    padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .panel.closed{display:none}
+  .hint{display:none}
+  .brand .meta{display:none}
+  .search input{width:150px}
+  .btn .lbl{display:none}
+}
+@media (min-width:821px){.panel.closed .x{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><h1>FairRail ERD</h1><span class="meta" id="meta"></span></div>
+    <label class="search" for="q"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="테이블·컬럼 검색" autocomplete="off"></label>
+    <button class="btn" id="bUndo" title="실행 취소 (Ctrl+Z)">↶<span class="lbl"> 되돌리기</span></button>
+    <button class="btn" id="bLayout" title="기본 배치로 정렬">⊞<span class="lbl"> 자동 정렬</span></button>
+    <button class="btn" id="bBig" aria-pressed="false" title="빅데이터 테이블을 흐리게 해서 나머지 구조만 보기">◐<span class="lbl"> 빅데이터</span></button>
+    <button class="btn" id="bPlan" aria-pressed="true" title="확장 예정 테이블 표시">┄<span class="lbl"> 확장 예정</span></button>
+    <button class="btn" id="bDocs" title="결정 사항·추적표·시나리오 등 설계 문서">▤<span class="lbl"> 문서</span></button>
+    <button class="btn" id="bIO">⇅<span class="lbl"> 내보내기</span></button>
+    <button class="btn primary" id="bAdd">＋ 테이블</button>
+  </header>
+  <nav class="chips" id="chips" aria-label="그룹 필터"></nav>
+  <div class="main">
+    <main class="stage" id="stage">
+      <div class="world" id="world">
+        <svg id="links" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="mMany" viewBox="0 0 12 12" refX="1" refY="6" markerWidth="12" markerHeight="12" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+              <path class="mk" d="M11 6 L1 1 M11 6 L1 6 M11 6 L1 11"/></marker>
+            <marker id="mOne" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" orient="auto" markerUnits="userSpaceOnUse">
+              <path class="mk" d="M7 1 L7 11 M10 1 L10 11"/></marker>
+          </defs>
+          <g id="lg"></g>
+        </svg>
+        <div id="nodes"></div>
+      </div>
+      <div class="hint">배경 드래그 이동 · 휠/핀치 확대 · 테이블 드래그 배치 · 클릭하면 설명</div>
+      <div class="zoombox">
+        <button id="zOut" aria-label="축소">−</button>
+        <button class="pct" id="zPct" title="100%로">100%</button>
+        <button id="zIn" aria-label="확대">＋</button>
+        <button class="fit" id="zFit">화면 맞춤</button>
+      </div>
+    </main>
+    <aside class="panel" id="panel">
+      <div class="ph" id="ph"></div>
+      <div class="pb" id="pb"></div>
+    </aside>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="mbox" role="dialog" aria-label="내보내기·불러오기">
+    <div class="mtabs">
+      <button class="mtab on" data-tab="json">JSON 내보내기</button>
+      <button class="mtab" data-tab="ddl">Oracle DDL</button>
+      <button class="mtab" data-tab="md">Markdown 명세</button>
+      <button class="mtab" data-tab="import">JSON 불러오기</button>
+      <button class="btn sm x" id="mClose">닫기</button>
+    </div>
+    <div class="mbody">
+      <textarea id="mText" spellcheck="false"></textarea>
+      <div class="mfoot">
+        <p class="p muted" id="mNote"></p>
+        <input type="file" id="mFile" accept=".json,application/json" hidden>
+        <button class="btn sm" id="mFileBtn" hidden>파일 선택</button>
+        <button class="btn sm danger" id="mReset" hidden>기본 스키마로 초기화</button>
+        <button class="btn sm primary" id="mAct">복사</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal" id="docs" hidden>
+  <div class="mbox" role="dialog" aria-label="설계 문서">
+    <div class="mtabs" id="dtabs"></div>
+    <div class="dbody" id="dbody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const GROUPS = {
+  ref:{name:'기준 데이터',db:'Oracle'}, member:{name:'회원·식별',db:'Oracle'}, auth:{name:'보안·인증',db:'Oracle'},
+  resv:{name:'예약·결제',db:'Oracle'}, event:{name:'이벤트 신뢰성',db:'Oracle'}, wait:{name:'취소표 재배정',db:'Oracle'},
+  risk:{name:'위험 점수·관리자',db:'Oracle'}, replay:{name:'CCTV 되돌아보기',db:'Oracle'}, mongo:{name:'MongoDB 로그',db:'MongoDB'},
+  redis:{name:'Redis',db:'Redis'}, ext:{name:'외부 빅데이터·분석',db:'MongoDB'}, synth:{name:'가상 데이터 전용',db:'Oracle'}
+};
+const SRCS = ['공공','생성','시스템','공공/생성','외부'];
+// [name, type, keys, src, desc, reason, fk]
+const SEED = [
+ {id:'station',ko:'역',g:'ref',desc:'역 기본 정보. 공공데이터의 역 코드를 그대로 PK로 사용한다.',notes:'',cols:[
+  ['station_id','VARCHAR2(10)','PK','공공','역 코드','공공데이터 코드 그대로 써야 다른 데이터와 조인 가능'],
+  ['station_name','VARCHAR2(50)','','공공','역 이름','화면 표시'],
+  ['latitude','NUMBER(9,6)','','공공','위도','선택. 지도·관리자 화면'],
+  ['longitude','NUMBER(9,6)','','공공','경도','선택']]},
+ {id:'route',ko:'노선',g:'ref',desc:'노선(예: 경부선)과 기점·종점역.',notes:'',cols:[
+  ['route_id','NUMBER','PK','생성','노선 ID',''],
+  ['route_name','VARCHAR2(50)','','공공','노선명 (예: 경부선)',''],
+  ['origin_station_id','VARCHAR2(10)','FK','공공','기점역','','station'],
+  ['dest_station_id','VARCHAR2(10)','FK','공공','종점역','','station']]},
+ {id:'route_station',ko:'노선별 역 순서',g:'ref',desc:'노선 안에서 각 역의 순번과 누적 거리. 구간 재고와 운임 계산의 기준.',notes:'한 역이 여러 노선에 속할 수 있어 station과 분리. 노선 추가 시 행만 추가.',cols:[
+  ['route_id','NUMBER','PK,FK','생성','노선','','route'],
+  ['station_id','VARCHAR2(10)','PK,FK','공공','역','','station'],
+  ['station_order','NUMBER(3)','','공공','노선 내 순번 (1부터)','구간 재고의 핵심. 인접 순번 사이가 1개 segment'],
+  ['distance_from_origin_km','NUMBER(7,1)','','공공','기점부터 누적 거리','운임 계산, 구간 거리 = 두 역 누적거리 차']]},
+ {id:'car_type',ko:'차량 유형',g:'ref',desc:'차량 유형 코드와 좌석 수. seat 자동 생성의 기준.',notes:'다운로드 후 실제 헤더명에 맞춰 컬럼명 조정 필요',cols:[
+  ['car_type_code','VARCHAR2(10)','PK','공공','차량 유형 코드','실제 코드값으로 세팅'],
+  ['car_type_name','VARCHAR2(50)','','공공','차량 유형명',''],
+  ['seat_count','NUMBER(3)','','공공','좌석 수','seat 자동 생성 기준'],
+  ['seat_grade','VARCHAR2(10)','','공공/생성','GENERAL / FIRST','등급별 운임·재고 분리'],
+  ['seat_columns','VARCHAR2(10)','','생성','좌석 열 배치 (예: ABCD)','좌석 번호(5A) 생성 규칙']]},
+ {id:'train',ko:'열차 (정의)',g:'ref',desc:'열차 번호·종류·노선. 날짜와 무관한 열차 정의.',notes:'',cols:[
+  ['train_id','NUMBER','PK','생성','열차 ID',''],
+  ['train_no','VARCHAR2(10)','','생성','열차 번호 (101, 103…)',''],
+  ['train_kind','VARCHAR2(20)','','생성','KTX / 새마을 등','운임 단가 구분'],
+  ['route_id','NUMBER','FK','생성','운행 노선','','route'],
+  ['direction','VARCHAR2(4)','','생성','DOWN / UP','상·하행 구분']]},
+ {id:'train_car',ko:'열차 편성',g:'ref',desc:'열차의 호차별 차량 유형.',notes:'',cols:[
+  ['train_id','NUMBER','PK,FK','생성','열차','','train'],
+  ['car_no','NUMBER(2)','PK','생성','호차 번호',''],
+  ['car_type_code','VARCHAR2(10)','FK','공공','차량 유형','호차마다 좌석 수·등급이 다름','car_type']]},
+ {id:'seat',ko:'물리 좌석',g:'ref',desc:'열차 기준의 고정 좌석 배치. 판매 상태는 seat_inventory에서 날짜별로 관리.',notes:'UNIQUE(train_id, car_no, seat_no) · train_car × car_type.seat_count로 스크립트 자동 생성',cols:[
+  ['seat_id','NUMBER','PK','생성','좌석 ID',''],
+  ['train_id','NUMBER','FK','생성','열차','','train'],
+  ['car_no','NUMBER(2)','','생성','호차',''],
+  ['seat_no','VARCHAR2(5)','','생성','좌석 번호 (5A)','화면 표시'],
+  ['seat_grade','VARCHAR2(10)','','생성','등급','car_type에서 상속'],
+  ['is_window','CHAR(1)','','생성','창측 여부 Y/N','좌석 선호 분포를 가상 트래픽에 반영']]},
+ {id:'train_run',ko:'날짜별 운행',g:'ref',desc:'특정 날짜의 열차 운행. 대기열·재고·Kafka 집계의 기준 단위.',notes:'UNIQUE(train_id, run_date)',cols:[
+  ['run_id','NUMBER','PK','생성','운행 ID','대기열·재고·Kafka 집계의 기준 단위'],
+  ['train_id','NUMBER','FK','생성','열차','','train'],
+  ['run_date','DATE','','생성','운행일','명절 기간'],
+  ['sale_open_at','TIMESTAMP','','생성','예매 오픈 시각','트래픽 폭증 시점. 부하 테스트 시나리오 기준'],
+  ['sale_close_at','TIMESTAMP','','생성','판매 마감',''],
+  ['status','VARCHAR2(10)','','시스템','SCHEDULED / ON_SALE / CLOSED / DEPARTED','판매 가능 여부 판단']]},
+ {id:'train_stop',ko:'정차 시각',g:'ref',desc:'운행별 정차역과 도착·출발 시각.',notes:'',cols:[
+  ['run_id','NUMBER','PK,FK','생성','운행','날짜별 시각 변경 대응','train_run'],
+  ['station_id','VARCHAR2(10)','PK,FK','공공','정차역','','station'],
+  ['stop_order','NUMBER(3)','','생성','정차 순서','route_station.station_order와 매핑'],
+  ['arrival_time','TIMESTAMP','','생성','도착 시각',''],
+  ['departure_time','TIMESTAMP','','생성','출발 시각','출발 직전 취소 판단 기준']]},
+ {id:'fare',ko:'운임',g:'ref',desc:'열차 종류·등급·구간별 운임과 적용 기간.',notes:'',cols:[
+  ['fare_id','NUMBER','PK','생성','',''],
+  ['train_kind','VARCHAR2(20)','','생성','열차 종류',''],
+  ['seat_grade','VARCHAR2(10)','','생성','좌석 등급',''],
+  ['from_station_id','VARCHAR2(10)','FK','공공','출발역','','station'],
+  ['to_station_id','VARCHAR2(10)','FK','공공','도착역','','station'],
+  ['amount','NUMBER(10)','','생성','운임','거리 × 단가로 산출'],
+  ['valid_from','DATE','','생성','적용 시작','운임 변경 이력 대응'],
+  ['valid_to','DATE','','생성','적용 종료','']]},
+ {id:'purchase_limit_policy',ko:'매수 제한 정책',g:'ref',desc:'1회·열차별·명절 전체 매수 제한을 코드 수정 없이 조정.',notes:'',cols:[
+  ['policy_id','NUMBER','PK','생성','',''],
+  ['scope','VARCHAR2(20)','','생성','PER_RESERVATION / PER_RUN / PER_HOLIDAY','1회·열차별·명절 전체 제한을 코드 수정 없이 조정'],
+  ['max_seats','NUMBER(3)','','생성','최대 매수',''],
+  ['valid_from','TIMESTAMP','','생성','적용 시작','설·추석별 다른 정책'],
+  ['valid_to','TIMESTAMP','','생성','적용 종료','']]},
+ {id:'member',ko:'회원',g:'member',desc:'회원 계정. ci_hash가 위험 점수·매수 제한의 묶음 단위. 비밀번호는 member_credential로 분리.',notes:'ci_hash는 UNIQUE를 걸지 않음. 다계정 어뷰저를 재현하려면 같은 CI가 여러 계정에 있어야 함.',cols:[
+  ['member_id','NUMBER','PK','생성','회원 ID',''],
+  ['email','VARCHAR2(100)','UQ','생성','로그인 ID',''],
+  ['ci_hash','VARCHAR2(64)','','생성','모의 본인인증 CI 해시','위험 점수·매수 제한의 묶음 단위. 다계정이어도 같은 값'],
+  ['status','VARCHAR2(10)','','시스템','ACTIVE / RESTRICTED / BANNED','관리자 조치 반영'],
+  ['created_at','TIMESTAMP','','생성','가입 시각','신규 계정 판별 (기본 신뢰도 낮음)']]},
+ {id:'payment_method',ko:'결제 수단',g:'member',desc:'회원의 결제 수단. method_hash로 여러 계정의 같은 카드를 연결.',notes:'',cols:[
+  ['method_id','NUMBER','PK','생성','',''],
+  ['member_id','NUMBER','FK','생성','','','member'],
+  ['method_hash','VARCHAR2(64)','','생성','카드 번호 해시','묶음 단위. 여러 계정이 같은 카드를 쓰면 연결'],
+  ['method_type','VARCHAR2(10)','','생성','CARD / ACCOUNT / PAY',''],
+  ['card_last4','CHAR(4)','','생성','끝 4자리','화면 표시용']]},
+ {id:'member_device',ko:'기기',g:'member',desc:'기기 지문과 회원의 N:M 연결. 한 기기 다계정 탐지.',notes:'',cols:[
+  ['device_hash','VARCHAR2(64)','PK','생성','기기 지문 해시','묶음 단위'],
+  ['member_id','NUMBER','PK,FK','생성','','한 기기 다계정 탐지 (N:M)','member'],
+  ['first_seen_at','TIMESTAMP','','생성','최초 사용',''],
+  ['last_seen_at','TIMESTAMP','','시스템','최근 사용','']]},
+ {id:'seat_inventory',ko:'좌석 구간 재고 ★',g:'resv',desc:'운행·좌석·구간 단위 점유. UNIQUE 제약으로 동시성 버그가 있어도 중복 예약 0건을 DB가 보장.',notes:'UNIQUE(run_id, seat_id, segment_no) · 서울(1)→대전(3) 예약 시 segment 1, 2 두 행 INSERT. 대전(3)→부산(5)은 segment 3, 4라 충돌 없이 재판매. 확장 과제를 안 하면 segment_no를 항상 0으로 사용.',cols:[
+  ['run_id','NUMBER','FK','시스템','운행','','train_run'],
+  ['seat_id','NUMBER','FK','시스템','좌석','','seat'],
+  ['segment_no','NUMBER(3)','','시스템','구간 번호 (역 순번 i → i+1 = i)','구간 단위 점유'],
+  ['reservation_id','NUMBER','FK','시스템','점유 예약','반환 시 이 예약 행만 삭제','reservation'],
+  ['status','VARCHAR2(10)','','시스템','HOLD / SOLD','선점과 확정 구분']]},
+ {id:'reservation',ko:'예약',g:'resv',desc:'예약 상태 머신의 중심. reservation_id가 Kafka 파티션 키.',notes:'인덱스: (status, pay_deadline_at) 만료 스캐너용, (ci_hash, run_id) 매수 제한 집계용',cols:[
+  ['reservation_id','NUMBER','PK','시스템','예약 ID','Kafka 파티션 키 → 상태 변경 순서 보장'],
+  ['member_id','NUMBER','FK','생성','예약자','','member'],
+  ['ci_hash','VARCHAR2(64)','','생성','예약 시점 CI','매수 제한 집계를 조인 없이 빠르게'],
+  ['run_id','NUMBER','FK','생성','운행','','train_run'],
+  ['from_station_id','VARCHAR2(10)','FK','공공','승차역','','station'],
+  ['to_station_id','VARCHAR2(10)','FK','공공','하차역','','station'],
+  ['seat_count','NUMBER(2)','','생성','예약 매수','1회 구매 매수 위험 신호'],
+  ['total_amount','NUMBER(10)','','시스템','예약 시점 금액','운임 변경과 무관하게 보존'],
+  ['status','VARCHAR2(16)','','시스템','HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED','상태 머신'],
+  ['channel','VARCHAR2(10)','','생성','WEB / APP','채널별 트래픽 분석'],
+  ['source','VARCHAR2(10)','','시스템','NORMAL / WAITLIST','취소표 재배정 여부'],
+  ['held_at','TIMESTAMP','','시스템','좌석 선점 시각',''],
+  ['pay_deadline_at','TIMESTAMP','','시스템','결제 기한','초과 시 자동 반환'],
+  ['confirmed_at','TIMESTAMP','','시스템','확정 시각','구매→취소 시간 계산 시작점'],
+  ['canceled_at','TIMESTAMP','','시스템','취소 시각',''],
+  ['idempotency_key','VARCHAR2(64)','UQ','시스템','클라이언트 요청 키','따닥 클릭·재시도 시 중복 예약 방지'],
+  ['version','NUMBER','','시스템','낙관적 락 버전','락 방식 성능 비교 실험용']]},
+ {id:'reservation_seat',ko:'예약 좌석',g:'resv',desc:'한 예약에 포함된 좌석과 좌석별 금액.',notes:'',cols:[
+  ['reservation_id','NUMBER','PK,FK','시스템','','','reservation'],
+  ['seat_id','NUMBER','PK,FK','시스템','','한 예약에 여러 좌석','seat'],
+  ['passenger_type','VARCHAR2(10)','','생성','ADULT / CHILD / SENIOR','운임 할인 확장'],
+  ['amount','NUMBER(10)','','시스템','좌석별 금액','부분 취소 대응']]},
+ {id:'reservation_history',ko:'예약 상태 이력',g:'resv',desc:'상태 전이 기록. 순서 보장과 잘못된 전이를 테스트로 증명하는 근거.',notes:'event_id는 outbox_event를 논리 참조 (outbox 정리 후에도 이력 보존을 위해 FK 미설정)',cols:[
+  ['history_id','NUMBER','PK','시스템','',''],
+  ['reservation_id','NUMBER','FK','시스템','','','reservation'],
+  ['from_status','VARCHAR2(16)','','시스템','이전 상태',''],
+  ['to_status','VARCHAR2(16)','','시스템','변경 상태','잘못된 전이(CANCELED→CONFIRMED) 탐지'],
+  ['event_id','VARCHAR2(36)','','시스템','원인 Kafka 이벤트','어떤 이벤트가 바꿨는지 추적'],
+  ['changed_at','TIMESTAMP','','시스템','변경 시각','순서 보장 검증 근거']]},
+ {id:'payment',ko:'결제',g:'resv',desc:'PG 결제 요청과 결과. 실패 시 Saga 보상 트리거.',notes:'',cols:[
+  ['payment_id','NUMBER','PK','시스템','',''],
+  ['reservation_id','NUMBER','FK','시스템','','','reservation'],
+  ['method_id','NUMBER','FK','생성','결제 수단','결제 수단 단위 위험 점수','payment_method'],
+  ['amount','NUMBER(10)','','시스템','결제 금액',''],
+  ['status','VARCHAR2(10)','','시스템','REQUESTED / APPROVED / FAILED / REFUNDED','Saga 보상 트리거'],
+  ['pg_tx_id','VARCHAR2(64)','','시스템','PG 거래 ID','PG 대사·환불'],
+  ['fail_reason','VARCHAR2(100)','','시스템','실패 사유','트러블슈팅'],
+  ['idempotency_key','VARCHAR2(64)','UQ','시스템','결제 요청 키','중복 결제 0건'],
+  ['requested_at','TIMESTAMP','','시스템','요청 시각','결제 소요 시간 측정'],
+  ['approved_at','TIMESTAMP','','시스템','승인 시각','']]},
+ {id:'cancellation',ko:'취소·환불',g:'resv',desc:'취소 유형과 시간 지표. 위험 신호와 재판매율 성과 지표의 원천.',notes:'',cols:[
+  ['cancel_id','NUMBER','PK','시스템','',''],
+  ['reservation_id','NUMBER','FK','시스템','','','reservation'],
+  ['cancel_type','VARCHAR2(10)','','시스템','USER / EXPIRED / PAY_FAILED / ADMIN','사용자 취소만 위험 신호로 집계'],
+  ['canceled_at','TIMESTAMP','','생성','취소 시각',''],
+  ['minutes_after_purchase','NUMBER','','시스템','확정 후 취소까지 분','구매 후 취소 시간 위험 신호'],
+  ['minutes_before_departure','NUMBER','','시스템','출발 전 남은 분','노쇼성 직전 취소 탐지, 기획 배경 통계와 연결'],
+  ['refund_amount','NUMBER(10)','','시스템','환불액',''],
+  ['resold_yn','CHAR(1)','','시스템','재판매 여부','재판매율 성과 지표']]},
+ {id:'outbox_event',ko:'Outbox 이벤트',g:'event',desc:'비즈니스 변경과 같은 트랜잭션에서 INSERT → 이벤트 유실 0건.',notes:'',cols:[
+  ['event_id','VARCHAR2(36)','PK','시스템','UUID','소비자 중복 판별 키'],
+  ['aggregate_type','VARCHAR2(20)','','시스템','RESERVATION / PAYMENT / WAITLIST','토픽 라우팅'],
+  ['aggregate_id','NUMBER','','시스템','reservation_id 등','Kafka 메시지 키 = 파티션 결정'],
+  ['event_type','VARCHAR2(30)','','시스템','SEAT_HELD, PAYMENT_APPROVED …',''],
+  ['payload','CLOB','','시스템','이벤트 본문 (JSON)','스키마 변경에 유연'],
+  ['status','VARCHAR2(10)','','시스템','PENDING / PUBLISHED / FAILED','릴레이가 PENDING만 발행'],
+  ['retry_count','NUMBER(2)','','시스템','재시도 횟수','무한 재시도 방지'],
+  ['created_at','TIMESTAMP','','시스템','생성 시각',''],
+  ['published_at','TIMESTAMP','','시스템','발행 시각','발행 지연 모니터링']]},
+ {id:'processed_event',ko:'처리 완료 (Inbox)',g:'event',desc:'Kafka at-least-once 대응. 이미 처리한 이벤트는 skip → 멱등 소비.',notes:'',cols:[
+  ['consumer_group','VARCHAR2(50)','PK','시스템','소비자 그룹','그룹마다 독립 처리'],
+  ['event_id','VARCHAR2(36)','PK','시스템','이벤트 ID','이미 있으면 skip → 멱등 소비'],
+  ['processed_at','TIMESTAMP','','시스템','처리 시각','보관 기간 후 삭제']]},
+ {id:'saga_instance',ko:'Saga 진행 상태',g:'event',desc:'예약→결제→확정 흐름의 진행 단계. 중단 지점에서 재개하거나 보상.',notes:'',cols:[
+  ['saga_id','VARCHAR2(36)','PK','시스템','',''],
+  ['reservation_id','NUMBER','FK','시스템','','','reservation'],
+  ['current_step','VARCHAR2(20)','','시스템','SEAT_HELD / PAYING / CONFIRMED / COMPENSATING','중단 지점에서 재개·보상'],
+  ['status','VARCHAR2(12)','','시스템','RUNNING / DONE / COMPENSATED','좌석 복구율 100% 검증'],
+  ['updated_at','TIMESTAMP','','시스템','갱신 시각','멈춘 Saga 탐지']]},
+ {id:'waitlist',ko:'취소표 대기',g:'wait',desc:'취소 발생 시 신청 순서대로 배정 → 알림 → 제한 시간 내 결제.',notes:'',cols:[
+  ['waitlist_id','NUMBER','PK','생성','',''],
+  ['member_id','NUMBER','FK','생성','','','member'],
+  ['run_id','NUMBER','FK','생성','','','train_run'],
+  ['from_station_id','VARCHAR2(10)','FK','공공','희망 승차역','구간 일치 취소표만 배정','station'],
+  ['to_station_id','VARCHAR2(10)','FK','공공','희망 하차역','','station'],
+  ['seat_grade','VARCHAR2(10)','','생성','희망 등급',''],
+  ['seat_count','NUMBER(2)','','생성','희망 매수',''],
+  ['requested_at','TIMESTAMP','','생성','신청 시각','대기 순서 기준'],
+  ['offered_at','TIMESTAMP','','시스템','배정 제안 시각',''],
+  ['offer_deadline_at','TIMESTAMP','','시스템','결제 기한','초과 시 다음 대기자'],
+  ['offered_reservation_id','NUMBER','FK','시스템','제안된 예약','','reservation'],
+  ['status','VARCHAR2(10)','','시스템','WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED','']]},
+ {id:'notification',ko:'알림',g:'wait',desc:'취소표 배정·결제 독촉·만료 알림.',notes:'',cols:[
+  ['notification_id','NUMBER','PK','시스템','',''],
+  ['member_id','NUMBER','FK','시스템','','','member'],
+  ['type','VARCHAR2(20)','','시스템','WAITLIST_OFFER / PAY_REMINDER / EXPIRED',''],
+  ['ref_id','NUMBER','','시스템','관련 예약·대기 ID',''],
+  ['channel','VARCHAR2(10)','','시스템','PUSH / EMAIL / IN_APP','채널 추가 확장'],
+  ['sent_at','TIMESTAMP','','시스템','발송 시각','알림→결제 전환 분석'],
+  ['read_at','TIMESTAMP','','시스템','확인 시각','']]},
+ {id:'risk_score',ko:'위험 점수 (현재값)',g:'risk',desc:'계정이 아닌 CI·결제수단·기기 단위 위험 점수. final_score만큼 대기열 순번을 뒤로.',notes:'',cols:[
+  ['subject_type','VARCHAR2(10)','PK','시스템','CI / PAYMENT / DEVICE','계정이 아닌 식별 단위'],
+  ['subject_hash','VARCHAR2(64)','PK','시스템','해당 해시',''],
+  ['total_purchase_seats','NUMBER','','시스템','누적 구매 매수','신호'],
+  ['max_single_purchase','NUMBER','','시스템','1회 최대 매수','신호'],
+  ['cancel_ratio','NUMBER(4,3)','','시스템','취소 비율','신호'],
+  ['avg_minutes_to_cancel','NUMBER','','시스템','평균 구매→취소 시간','신호'],
+  ['last_minute_cancel_cnt','NUMBER','','시스템','출발 직전 취소 수','신호'],
+  ['linked_account_cnt','NUMBER','','시스템','연결된 계정 수','다계정 신호'],
+  ['avg_request_interval_ms','NUMBER','','시스템','평균 요청 간격','매크로 신호'],
+  ['account_age_days','NUMBER','','시스템','가장 오래된 계정 나이','신규 계정 기본 신뢰도'],
+  ['rule_score','NUMBER(5,2)','','시스템','규칙 기반 점수',''],
+  ['iforest_score','NUMBER(5,2)','','시스템','Isolation Forest 점수','두 방식 비교'],
+  ['final_score','NUMBER(5,2)','','시스템','최종 점수 (0~100)','대기열 순번 조정량'],
+  ['reasons','CLOB','','시스템','점수 근거 목록 (JSON)','운영 원칙: 근거 기록'],
+  ['model_version','VARCHAR2(20)','FK','시스템','산정 모델 버전','모델 교체 시 비교','model_run'],
+  ['calculated_at','TIMESTAMP','','시스템','산정 시각','감쇠 기준'],
+  ['review_status','VARCHAR2(10)','','시스템','NONE / PENDING / CONFIRMED / CLEARED','높은 점수는 검토 후 조치']]},
+ {id:'risk_score_history',ko:'위험 점수 이력',g:'risk',desc:'산정 시점별 점수와 근거. 감쇠 동작 검증, 이의 제기 대응.',notes:'',cols:[
+  ['history_id','NUMBER','PK','시스템','',''],
+  ['subject_type','VARCHAR2(10)','','시스템','대상 유형',''],
+  ['subject_hash','VARCHAR2(64)','','시스템','대상 해시',''],
+  ['final_score','NUMBER(5,2)','','시스템','당시 점수','감쇠 동작 검증, 이의 제기 대응'],
+  ['reasons','CLOB','','시스템','당시 근거',''],
+  ['calculated_at','TIMESTAMP','','시스템','산정 시각','']]},
+ {id:'admin_action',ko:'관리자 조치',g:'risk',desc:'위험 사용자 검토·제재 기록. 감사 추적.',notes:'',cols:[
+  ['action_id','NUMBER','PK','시스템','',''],
+  ['admin_id','NUMBER','','시스템','조치자','감사 추적'],
+  ['subject_type','VARCHAR2(10)','','시스템','대상 유형',''],
+  ['subject_hash','VARCHAR2(64)','','시스템','대상 해시',''],
+  ['action_type','VARCHAR2(20)','','시스템','CONFIRM / CLEAR / RESTRICT / BAN',''],
+  ['memo','VARCHAR2(500)','','시스템','사유',''],
+  ['acted_at','TIMESTAMP','','시스템','조치 시각','']]},
+ {id:'behavior_log',ko:'행동 로그',g:'mongo',big:true,desc:'요청 단위 행동 로그. Python 분석으로 위험 점수의 신호를 뽑는다.',notes:'인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, TTL { ts: 1 } (예: 180일) · 샤드 키 후보: { ci_hash: "hashed" } · 점선은 논리 참조',cols:[
+  ['_id','ObjectId','PK','시스템','',''],
+  ['member_id','Long','FK','생성','','','member'],
+  ['ci_hash','String','','생성','','묶음 단위 집계'],
+  ['device_hash','String','','생성','','묶음 단위 집계'],
+  ['ip_hash','String','','생성','','IP 집중도'],
+  ['session_id','String','FK','생성','= auth_session.session_id','세션 단위 패턴, CCTV 녹화와 연결','auth_session'],
+  ['event_type','String','','생성','VIEW_TRAIN / VIEW_SEAT / QUEUE_ENTER / SEAT_HOLD / PAY / CANCEL',''],
+  ['run_id','Long','FK','생성','대상 운행','인기 열차 쏠림 분석','train_run'],
+  ['ts','Date','','생성','이벤트 시각 (ms)',''],
+  ['interval_ms','Int','','생성','직전 요청과 간격','매크로 신호 (사람은 수백 ms~초, 봇은 균일·짧음)'],
+  ['user_agent','String','','생성','','헤드리스 브라우저 탐지'],
+  ['channel','String','','생성','WEB / APP',''],
+  ['response_status','Int','','시스템','HTTP 상태','차단·에러 분석'],
+  ['meta','Object','','시스템','이벤트별 추가 정보','스키마 변경 없이 필드 확장']]},
+ {id:'queue_log',ko:'대기열 기록',g:'mongo',big:true,desc:'대기열 진입·조정·입장 기록. 순번 조정이 의도대로 됐는지 사후 검증.',notes:'점선은 논리 참조',cols:[
+  ['member_id','Long','FK','시스템','','','member'],
+  ['run_id','Long','FK','시스템','','','train_run'],
+  ['entered_at','Date','','시스템','실제 진입 시각',''],
+  ['risk_score','Double','','시스템','진입 시 점수',''],
+  ['penalty_ms','Long','','시스템','뒤로 밀린 양',''],
+  ['initial_rank','Long','','시스템','조정 전 순번','조정이 의도대로 됐는지 검증'],
+  ['adjusted_rank','Long','','시스템','조정 후 순번',''],
+  ['admitted_at','Date','','시스템','입장 시각','실제 대기 시간 vs 예상 대기 시간 비교'],
+  ['left_reason','String','','시스템','ADMITTED / TIMEOUT / LEFT','이탈률']]},
+ {id:'redis_keys',ko:'Redis 키',g:'redis',desc:'대기열·좌석 선점·매수 제한·캐시용 키. 이름 칸이 키 패턴, 타입 칸이 Redis 자료형.',notes:'',cols:[
+  ['queue:{runId}','ZSET','','시스템','member=memberId, score=진입시각ms + penalty_ms','위험 점수를 score에 더하면 별도 지연 없이 후순위 처리'],
+  ['queue:active:{runId}','ZSET','','시스템','입장 허용된 사용자, score=만료시각','동시 입장 인원 제한'],
+  ['queue:throughput:{runId}','STRING','','시스템','초당 입장 처리 수','예상 대기시간 = 내 순번 ÷ 처리량'],
+  ['seat:hold:{runId}:{seatId}:{segNo}','STRING+TTL','','시스템','값: reservationId','TTL = 결제 기한, 만료 시 자동 반환'],
+  ['limit:{runId}:{ciHash}','STRING','','시스템','구매 매수','DB 조회 없이 1차 차단'],
+  ['risk:{subjectType}:{hash}','STRING','','시스템','final_score 캐시','대기열 진입 시 DB 미조회'],
+  ['seatmap:{runId}','HASH','','시스템','seatId → 상태','조회 트래픽을 DB에서 분리']]},
+ {id:'synthetic_label',ko:'정답 라벨',g:'synth',desc:'가상 데이터의 정답. 위험 점수의 정밀도·재현율 측정용. 운영 로직에서 참조 금지.',notes:'운영 로직에서 참조 금지',cols:[
+  ['member_id','NUMBER','PK,FK','생성','회원','','member'],
+  ['user_type','VARCHAR2(20)','','생성','NORMAL / RESELLER / CANCEL_ABUSER / MACRO','위험 점수의 정밀도·재현율 측정'],
+  ['group_id','NUMBER','','생성','같은 어뷰저가 만든 다계정 묶음','묶음 탐지 성능 측정'],
+  ['generation_params','CLOB','','생성','생성 시 사용한 분포 파라미터 (JSON)','재현 가능성, 발표 시 근거']]}
+];
+const SEED_V2 = [
+ {id:'member_credential',ko:'로그인 인증 정보',g:'auth',desc:'Argon2id 비밀번호 해시와 잠금 상태. 회원 프로필과 분리해 해시가 일반 조회에 섞이지 않게 한다.',notes:'파라미터 OWASP 권장값 m=19456(19MiB), t=2, p=1로 시작 · 해시 1회 약 19MiB → 동시 검증 수 세마포어 제한 · 없는 계정도 더미 해시로 검증해 응답 시간 동일하게',cols:[
+  ['member_id','NUMBER','PK,FK','생성','회원 (1:1)','프로필과 인증 정보 분리','member'],
+  ['password_hash','VARCHAR2(255)','','시스템','Argon2id PHC 문자열 ($argon2id$v=19$m=19456,t=2,p=1$salt$hash)','솔트·파라미터가 문자열 안에 있어 salt 컬럼 불필요'],
+  ['hash_algo','VARCHAR2(20)','','시스템','ARGON2ID','알고리즘 교체 대비'],
+  ['hash_params','VARCHAR2(40)','','시스템','m=19456,t=2,p=1','정책 파라미터와 다르면 재해싱 대상'],
+  ['pepper_key_id','VARCHAR2(20)','','시스템','페퍼 키 버전','페퍼는 DB 밖(환경변수·KMS)에 두고 버전만 기록'],
+  ['needs_rehash','CHAR(1)','','시스템','Y/N','다음 로그인 성공 시 새 파라미터로 재해싱'],
+  ['failed_count','NUMBER(3)','','시스템','연속 로그인 실패 횟수','계정 잠금 기준'],
+  ['locked_until','TIMESTAMP','','시스템','잠금 해제 시각','무차별 대입 방지'],
+  ['password_changed_at','TIMESTAMP','','시스템','비밀번호 변경 시각','변경 직후 대량 구매 = 탈취 의심 신호'],
+  ['last_login_at','TIMESTAMP','','시스템','마지막 로그인','휴면 계정 갑작스런 활동 탐지']]},
+ {id:'identity_verification',ko:'본인인증 이력',g:'auth',desc:'모의 본인인증 이력. 같은 CI로 여러 계정을 인증하는 다계정 신호를 잡는다.',notes:'',cols:[
+  ['verification_id','NUMBER','PK','생성','',''],
+  ['member_id','NUMBER','FK','생성','인증한 계정','','member'],
+  ['ci_hash','VARCHAR2(64)','','생성','인증 결과 CI 해시','같은 CI로 짧은 기간 여러 계정 인증 = 다계정 신호'],
+  ['provider','VARCHAR2(20)','','생성','MOCK_PASS / MOCK_PHONE','모의 본인인증'],
+  ['result','VARCHAR2(10)','','시스템','SUCCESS / FAIL',''],
+  ['verified_at','TIMESTAMP','','생성','인증 시각','']]},
+ {id:'auth_session',ko:'로그인 세션',g:'auth',desc:'로그인 세션과 리프레시 토큰. session_id가 CCTV 녹화 단위이자 행동 로그 연결 키.',notes:'',cols:[
+  ['session_id','VARCHAR2(36)','PK','시스템','UUID','CCTV 녹화 단위. replay_session, behavior_log와 같은 키'],
+  ['member_id','NUMBER','FK','생성','','','member'],
+  ['refresh_token_hash','VARCHAR2(64)','','시스템','리프레시 토큰 SHA-256','고엔트로피 무작위 토큰이라 Argon2 불필요. 매 갱신마다 검증하므로 빠른 해시'],
+  ['device_hash','VARCHAR2(64)','','생성','기기 지문 해시',''],
+  ['ip_hash','VARCHAR2(64)','','생성','IP 해시',''],
+  ['user_agent','VARCHAR2(300)','','생성','',''],
+  ['created_at','TIMESTAMP','','시스템','로그인 시각',''],
+  ['expires_at','TIMESTAMP','','시스템','만료 시각',''],
+  ['revoked_at','TIMESTAMP','','시스템','강제 종료 시각',''],
+  ['revoke_reason','VARCHAR2(20)','','시스템','LOGOUT / ROTATED / ADMIN / SUSPICIOUS','관리자 조치로 끊긴 세션 구분']]},
+ {id:'login_attempt',ko:'로그인 시도',g:'auth',db:'MongoDB',big:true,desc:'모든 로그인 시도. 크리덴셜 스터핑 탐지와 Argon2 검증 부하 측정.',notes:'TTL { ts: 1 } · 인덱스 { ip_hash: 1, ts: -1 }, { email_hash: 1, ts: -1 }',cols:[
+  ['_id','ObjectId','PK','시스템','',''],
+  ['member_id','Long','FK','생성','대상 계정 (없으면 null)','','member'],
+  ['email_hash','String','','생성','입력한 이메일 해시','없는 계정 대상 시도도 추적 → 크리덴셜 스터핑 탐지'],
+  ['result','String','','생성','SUCCESS / WRONG_PASSWORD / LOCKED / NOT_FOUND / RATE_LIMITED',''],
+  ['ip_hash','String','','생성','','한 IP에서 여러 계정 시도 탐지'],
+  ['device_hash','String','','생성','',''],
+  ['user_agent','String','','생성','',''],
+  ['session_id','String','FK','시스템','성공 시 발급된 세션','','auth_session'],
+  ['verify_ms','Int','','시스템','Argon2 검증 소요 시간','예매 오픈 직전 로그인 폭주 시 CPU·메모리 병목 측정'],
+  ['ts','Date','','생성','시도 시각','TTL 기준']]},
+ {id:'replay_session',ko:'녹화 세션',g:'replay',db:'MongoDB',big:true,desc:'CCTV 녹화 단위. 로그인 세션과 1:1. 평시 샘플링, 위험 사용자는 전체 녹화.',notes:'점선은 논리 참조',cols:[
+  ['session_id','String','PK,FK','시스템','= auth_session.session_id','로그인 세션과 1:1','auth_session'],
+  ['member_id','Long','FK','생성','','','member'],
+  ['ci_hash','String','','생성','묶음 키','케이스에서 연관 세션 검색'],
+  ['device_hash','String','','생성','묶음 키',''],
+  ['ip_hash','String','','생성','묶음 키',''],
+  ['started_at','Date','','생성','녹화 시작',''],
+  ['ended_at','Date','','생성','녹화 종료',''],
+  ['event_count','Int','','시스템','이벤트 수','재생 전 분량 확인'],
+  ['run_ids','Array','','생성','이 세션에서 본 운행','특정 열차 기준 세션 검색'],
+  ['recording_mode','String','','시스템','SAMPLED / FULL','평시 샘플링, 위험 시 전체 녹화 → 저장량 제어'],
+  ['risk_score_at_start','Double','','시스템','시작 시점 점수','녹화 모드 결정 근거'],
+  ['mask_policy_version','String','','시스템','입력 마스킹 규칙 버전','어떤 규칙으로 가렸는지 추적'],
+  ['retention_until','Date','','시스템','보관 기한 (기본 90일)','개인정보 최소 보관'],
+  ['legal_hold','Boolean','','시스템','삭제 보류','케이스에 연결되면 true']]},
+ {id:'replay_event',ko:'녹화 이벤트',g:'replay',db:'MongoDB',big:true,desc:'화면 행동과 서버 도메인 이벤트를 한 타임라인에 기록하는 시계열 컬렉션. 재생기가 화면을 다시 그린다.',notes:'시계열 컬렉션: timeField ts, metaField session_id, granularity seconds, expireAfterSeconds 7776000(90일) · DOM 녹화(rrweb)는 확장 과제',cols:[
+  ['session_id','String','FK','시스템','녹화 세션 (metaField)','세션별 버킷 저장 → 한 세션 재생 조회가 빠름','replay_session'],
+  ['ts','Date','','생성','이벤트 시각 (timeField, ms)',''],
+  ['seq','Long','','시스템','세션 내 순번','같은 ms 이벤트도 순서 보장'],
+  ['t_offset_ms','Long','','시스템','세션 시작부터 경과 시간','재생 타임라인 위치, 다중 세션 정렬'],
+  ['type','String','','생성','PAGE_VIEW / CLICK / INPUT / SCROLL / MOUSE_PATH / VISIBILITY / API / DOMAIN',''],
+  ['screen','String','','생성','화면 ID (queue, seat_map, payment)','재생기가 화면을 다시 그리는 기준'],
+  ['target','String','','생성','요소 ID (seat-5A, btn-pay)','어떤 좌석·버튼을 눌렀는지'],
+  ['x','Int','','생성','클릭 X (화면 비율 0~1000)','해상도와 무관하게 재생'],
+  ['y','Int','','생성','클릭 Y (화면 비율 0~1000)',''],
+  ['path','Array','','생성','마우스 궤적 [[dt, x, y], …]','사람은 곡선·가감속, 매크로는 직선·등속·순간이동'],
+  ['input_masked','String','','시스템','입력값 마스킹 (길이만)','개인정보 미보관'],
+  ['api','Object','','시스템','{ method, path, status, latency_ms }','화면 행동과 서버 응답을 같이 봄'],
+  ['domain_event','Object','','시스템','{ type, ref_id, kafka_event_id }','클릭 → 좌석 선점 → 결제 → 취소가 한 줄로']]},
+ {id:'suspicious_case',ko:'의심 케이스',g:'replay',desc:'위험 점수·규칙·관리자 지정으로 열리는 조사 건. 되돌아볼 시간 범위와 판정을 기록.',notes:'',cols:[
+  ['case_id','NUMBER','PK','시스템','',''],
+  ['subject_type','VARCHAR2(10)','','시스템','CI / PAYMENT / DEVICE','계정이 아닌 묶음 단위'],
+  ['subject_hash','VARCHAR2(64)','','시스템','',''],
+  ['trigger_type','VARCHAR2(20)','','시스템','RISK_THRESHOLD / RULE / MODEL / ADMIN','어떻게 열렸는지'],
+  ['trigger_detail','VARCHAR2(200)','','시스템','예: 같은 CI 4계정 동시 좌석 선점','첫 화면에서 이유 확인'],
+  ['risk_score_at_open','NUMBER(5,2)','','시스템','생성 시점 점수',''],
+  ['window_from','TIMESTAMP','','시스템','되돌아볼 시작 시각','재생 범위 기본값'],
+  ['window_to','TIMESTAMP','','시스템','되돌아볼 끝 시각',''],
+  ['status','VARCHAR2(12)','','시스템','OPEN / REVIEWING / CONFIRMED / DISMISSED',''],
+  ['assignee_id','NUMBER','','시스템','담당 관리자',''],
+  ['verdict','VARCHAR2(20)','','시스템','RESELLER / MACRO / CANCEL_ABUSE / NORMAL','synthetic_label과 비교해 오탐률 측정'],
+  ['admin_action_id','NUMBER','FK','시스템','최종 조치','','admin_action'],
+  ['opened_at','TIMESTAMP','','시스템','',''],
+  ['closed_at','TIMESTAMP','','시스템','','처리 소요 시간']]},
+ {id:'case_session',ko:'케이스-세션 연결',g:'replay',desc:'한 케이스에 묶인 여러 세션. 같은 CI·기기의 다계정 세션을 나란히 재생.',notes:'',cols:[
+  ['case_id','NUMBER','PK,FK','시스템','','','suspicious_case'],
+  ['session_id','VARCHAR2(36)','PK,FK','시스템','','한 케이스에 여러 세션','auth_session'],
+  ['member_id','NUMBER','FK','시스템','세션 계정','','member'],
+  ['link_reason','VARCHAR2(20)','','시스템','TRIGGER / SAME_CI / SAME_DEVICE / SAME_PAYMENT / SAME_IP','다계정을 나란히 재생하는 근거'],
+  ['sync_offset_ms','NUMBER','','시스템','동시 재생 시간 보정','기기 시계 오차 보정']]},
+ {id:'case_marker',ko:'타임라인 마커',g:'replay',desc:'재생 타임라인의 북마크. 시스템이 자동으로 찍고 관리자가 메모를 더한다.',notes:'',cols:[
+  ['marker_id','NUMBER','PK','시스템','',''],
+  ['case_id','NUMBER','FK','시스템','','','suspicious_case'],
+  ['session_id','VARCHAR2(36)','','시스템','표시할 세션',''],
+  ['at_ts','TIMESTAMP','','시스템','타임라인 위치','누르면 그 시점으로 이동'],
+  ['marker_type','VARCHAR2(10)','','시스템','AUTO / MANUAL','시스템 탐지와 관리자 메모 구분'],
+  ['rule_code','VARCHAR2(30)','','시스템','FAST_CLICK / SAME_SEAT_RETRY / CANCEL_AFTER_PAY / MULTI_ACCOUNT_SYNC / LINEAR_MOUSE','어떤 규칙이 잡았는지'],
+  ['label','VARCHAR2(200)','','시스템','예: 0.1초 간격 좌석 클릭 28회',''],
+  ['severity','VARCHAR2(6)','','시스템','LOW / MID / HIGH',''],
+  ['created_by','NUMBER','','시스템','작성 관리자 (AUTO는 null)','']]},
+ {id:'evidence_snapshot',ko:'증거 동결',g:'replay',db:'MongoDB',big:true,desc:'케이스 구간의 녹화 이벤트 복사본과 해시. 원본 TTL 삭제와 사후 변조에 대비.',notes:'',cols:[
+  ['_id','ObjectId','PK','시스템','',''],
+  ['case_id','Long','FK','시스템','케이스','','suspicious_case'],
+  ['session_id','String','FK','시스템','','','replay_session'],
+  ['events','Array','','시스템','구간 replay_event 복사본','원본이 TTL로 지워져도 증거 보존'],
+  ['event_count','Int','','시스템','',''],
+  ['sha256','String','','시스템','events 전체 해시','사후 변조 여부 확인'],
+  ['frozen_at','Date','','시스템','동결 시각',''],
+  ['frozen_by','Long','','시스템','동결한 관리자','']]},
+ {id:'replay_access_log',ko:'녹화 열람 기록',g:'replay',desc:'누가 언제 왜 녹화를 봤는지. 녹화 열람 자체가 개인정보 처리이므로 감사 기록.',notes:'',cols:[
+  ['access_id','NUMBER','PK','시스템','',''],
+  ['admin_id','NUMBER','','시스템','열람자',''],
+  ['case_id','NUMBER','FK','시스템','','케이스 없이 임의 열람 불가','suspicious_case'],
+  ['session_id','VARCHAR2(36)','','시스템','',''],
+  ['action','VARCHAR2(10)','','시스템','VIEW / UNMASK / EXPORT','마스킹 해제는 별도 기록'],
+  ['purpose','VARCHAR2(200)','','시스템','열람 사유 (필수)','개인정보 처리 감사'],
+  ['accessed_at','TIMESTAMP','','시스템','','']]},
+ {id:'model_run',ko:'모델 학습 기록',g:'risk',desc:'규칙·Isolation Forest 모델 버전별 파라미터와 성능. 발표용 수치의 원천.',notes:'is_active = Y는 한 번에 하나',cols:[
+  ['model_version','VARCHAR2(20)','PK','시스템','예: iforest-2026.11-01','risk_score.model_version이 참조'],
+  ['algorithm','VARCHAR2(20)','','시스템','RULE / IFOREST','두 방식 비교'],
+  ['params','CLOB','','시스템','contamination, n_estimators 등 (JSON)','재현'],
+  ['train_source','VARCHAR2(100)','','시스템','학습 데이터 범위',''],
+  ['trained_at','TIMESTAMP','','시스템','',''],
+  ['precision_score','NUMBER(4,3)','','시스템','정밀도','발표용 성능 수치'],
+  ['recall_score','NUMBER(4,3)','','시스템','재현율',''],
+  ['f1_score','NUMBER(4,3)','','시스템','F1',''],
+  ['threshold','NUMBER(5,2)','','시스템','케이스 자동 생성 임계값','suspicious_case 트리거 기준'],
+  ['is_active','CHAR(1)','','시스템','운영 적용 여부','']]},
+ {id:'risk_feature',ko:'학습용 피처 스냅샷',g:'ext',db:'MongoDB',big:true,desc:'시점별 위험 신호 묶음. 모델 학습·평가 재현용.',notes:'',cols:[
+  ['subject_type','String','PK','시스템','대상 유형',''],
+  ['subject_hash','String','PK','시스템','대상 해시',''],
+  ['window_date','Date','PK','시스템','집계 기준일','시점별 재현'],
+  ['features','Object','','시스템','risk_score 신호 + 마우스 직선도 등 replay 신호','신호 추가 시 스키마 변경 없음'],
+  ['label','String','','생성','synthetic_label 조인 값','학습·평가에만 사용'],
+  ['source','String','','시스템','SYNTHETIC / EXT_HOTEL / EXT_LOG','어떤 데이터에서 나온 피처인지'],
+  ['model_version','String','FK','시스템','이 피처로 학습한 모델','','model_run']]},
+ {id:'ext_hotel_booking',ko:'Hotel Booking 원본',g:'ext',db:'MongoDB',big:true,desc:'Kaggle Hotel Booking Demand 원본 (약 12만 건, 32컬럼 전부 적재). 예약 시점·이력과 취소의 관계 → 반복 취소 위험 점수 근거.',notes:'주요 컬럼만 표시. 포르투갈 호텔 데이터라 도메인 차이 감안',cols:[
+  ['hotel','String','','외부','City / Resort','도메인 구분'],
+  ['is_canceled','Int','','외부','취소 여부 0/1','취소 예측 라벨'],
+  ['lead_time','Int','','외부','예약~도착 일수','예매~출발 간격과 취소율 관계'],
+  ['arrival_date_year','Int','','외부','도착 연도','성수기 효과 비교'],
+  ['arrival_date_month','String','','외부','도착 월',''],
+  ['arrival_date_day_of_month','Int','','외부','도착 일',''],
+  ['adults','Int','','외부','인원','매수와 취소율 관계'],
+  ['previous_cancellations','Int','','외부','과거 취소 횟수','반복 취소 위험 점수 가중치 근거'],
+  ['previous_bookings_not_canceled','Int','','외부','과거 정상 이용 횟수','신뢰 이력이 위험을 상쇄하는 정도'],
+  ['is_repeated_guest','Int','','외부','재방문 여부','신규 계정 기본 신뢰도 근거'],
+  ['booking_changes','Int','','외부','예약 변경 횟수',''],
+  ['deposit_type','String','','외부','No Deposit / Non Refund / Refundable','취소 수수료 정책이 취소율에 주는 영향'],
+  ['days_in_waiting_list','Int','','외부','대기 일수','취소표 대기 설계 참고'],
+  ['market_segment','String','','외부','판매 세그먼트','대리점 경로 = 대량 구매자 패턴'],
+  ['distribution_channel','String','','외부','판매 채널',''],
+  ['customer_type','String','','외부','Transient / Group 등',''],
+  ['adr','Double','','외부','1박 평균 요금',''],
+  ['reservation_status','String','','외부','Check-Out / Canceled / No-Show','노쇼 비율'],
+  ['reservation_status_date','String','','외부','상태 변경일','취소 시점 분포 → minutes_before_departure 생성']]},
+ {id:'ext_web_access_log',ko:'Web Access Log 원본',g:'ext',db:'MongoDB',big:true,desc:'Kaggle Web Server Access Logs (Nginx combined 형식) 파싱 적재. 요청 간격·IP 집중도 → 봇 특징.',notes:'봇 대부분이 검색엔진 크롤러라 예매 매크로와 다름 · 라이선스 확인 필요',cols:[
+  ['ip','String','','외부','요청 IP (적재 시 해시)','IP 집중도'],
+  ['ts','Date','','외부','요청 시각','요청 간격 분포'],
+  ['method','String','','외부','HTTP 메서드',''],
+  ['url','String','','외부','요청 경로','반복 조회 패턴'],
+  ['protocol','String','','외부','',''],
+  ['status','Int','','외부','HTTP 상태',''],
+  ['bytes','Int','','외부','응답 크기',''],
+  ['referrer','String','','외부','','봇은 referrer 없는 직접 접근 비율 높음'],
+  ['user_agent','String','','외부','','봇 UA 라벨링'],
+  ['session_key','String','','시스템','ip+UA 30분 윈도우 세션','세션 단위 피처 추출'],
+  ['interval_ms','Int','','시스템','같은 세션 직전 요청과 간격','매크로 interval_ms 분포의 실데이터 근거']]},
+ {id:'ext_renfe_price',ko:'Renfe 가격 원본',g:'ext',db:'MongoDB',big:true,desc:'Kaggle 스페인 고속철 가격 관측 데이터. 출발일 대비 추이 → 가상 트래픽 분포.',notes:'개별 구매 기록이 아닌 반복 조회 기반 가격 관측 · 라이선스 Other',cols:[
+  ['insert_date','Date','','외부','관측 시각',''],
+  ['origin','String','','외부','출발역',''],
+  ['destination','String','','외부','도착역',''],
+  ['start_date','Date','','외부','출발 시각',''],
+  ['end_date','Date','','외부','도착 시각',''],
+  ['train_type','String','','외부','AVE 등',''],
+  ['train_class','String','','외부','등급',''],
+  ['fare','String','','외부','요금제',''],
+  ['price','Double','','외부','가격',''],
+  ['days_before','Int','','시스템','start_date − insert_date','출발일 대비 수요 곡선 → 가상 트래픽 분포']]},
+ {id:'ext_bot_detection',ko:'Bot Detection 원본 (선택)',g:'ext',db:'MongoDB',big:true,desc:'본머스 대학 Web Bot Detection Dataset. 웹 로그 + 마우스 움직임으로 사람·봇 구분. 확보 후 필드 확정.',notes:'공개 페이지에 파일이 보이지 않아 확보 가능 여부 확인 필요',cols:[
+  ['session_id','String','','외부','세션',''],
+  ['label','String','','외부','human / moderate bot / advanced bot','마우스 궤적 판별 기준 검증'],
+  ['web_log','Array','','외부','세션 요청 로그',''],
+  ['mouse_movements','Array','','외부','마우스 좌표 시퀀스','replay_event.path 형태로 변환']]}
+];
+SEED.push(...SEED_V2);
+const V3_TABLES = [
+ {id:'admin_user',ko:'관리자',g:'auth',desc:'관리자 계정과 역할. 녹화 마스킹 해제·내보내기는 SUPERVISOR만.',notes:'',cols:[
+  ['admin_id','NUMBER','PK','생성','관리자 ID','admin_action, suspicious_case, case_marker, replay_access_log, evidence_snapshot이 참조'],
+  ['login_id','VARCHAR2(50)','UQ','생성','로그인 ID',''],
+  ['password_hash','VARCHAR2(255)','','시스템','Argon2id PHC 문자열','회원과 같은 정책'],
+  ['role','VARCHAR2(20)','','생성','VIEWER / REVIEWER / SUPERVISOR','마스킹 해제·내보내기는 SUPERVISOR만'],
+  ['mfa_secret_enc','VARCHAR2(200)','','시스템','TOTP 비밀키 암호문','녹화·개인정보 접근 계정이라 2단계 인증 자리 확보 (구현은 확장)'],
+  ['status','VARCHAR2(10)','','시스템','ACTIVE / DISABLED',''],
+  ['last_login_at','TIMESTAMP','','시스템','마지막 로그인','']]},
+ {id:'sale_event',ko:'명절 예매 행사',g:'ref',desc:'설·추석 등 예매 행사. 연휴 기간과 오픈 일정을 묶어 매수 제한·수수료 정책의 범위가 된다.',notes:'',cols:[
+  ['sale_event_id','NUMBER','PK','생성','',''],
+  ['name','VARCHAR2(50)','','생성','예: 2026 추석',''],
+  ['holiday_from','DATE','','생성','연휴 시작','PER_HOLIDAY 매수 제한의 기간 정의'],
+  ['holiday_to','DATE','','생성','연휴 끝',''],
+  ['sale_open_at','TIMESTAMP','','생성','일반 예매 오픈','부하 테스트 시나리오 기준'],
+  ['priority_open_at','TIMESTAMP','','생성','교통약자 사전 예매 오픈','확장 시 사용'],
+  ['status','VARCHAR2(10)','','시스템','PLANNED / OPEN / CLOSED','']]},
+ {id:'cancel_fee_policy',ko:'취소 수수료 정책',g:'resv',desc:'출발 전 남은 시간 구간별 수수료율. 기획 배경의 노쇼 증가에 대한 정책 수단.',notes:'구간·비율 값은 팀이 결정',cols:[
+  ['fee_policy_id','NUMBER','PK','생성','',''],
+  ['sale_event_id','NUMBER','FK','생성','적용 행사 (null이면 상시)','명절만 수수료 강화 가능','sale_event'],
+  ['min_minutes_before','NUMBER','','생성','출발 전 구간 시작(분)',''],
+  ['max_minutes_before','NUMBER','','생성','출발 전 구간 끝(분)',''],
+  ['fee_rate','NUMBER(4,3)','','생성','수수료율','노쇼 억제'],
+  ['after_departure','CHAR(1)','','생성','출발 후 반환 여부','출발 후 반환은 재판매 불가 구간']]},
+ {id:'ext_dataset',ko:'외부 데이터셋 카탈로그',g:'ext',db:'Oracle',desc:'적재한 외부 데이터셋의 출처·라이선스·건수·해시. 기획서의 "사용 전 라이선스 확인" 원칙 기록.',notes:'',cols:[
+  ['dataset_id','VARCHAR2(40)','PK','시스템','예: hotel_booking@v1','모든 ext_* 문서의 dataset_id가 참조'],
+  ['name','VARCHAR2(100)','','시스템','데이터셋 이름',''],
+  ['source_url','VARCHAR2(300)','','시스템','원본 주소','발표 출처'],
+  ['license','VARCHAR2(50)','','시스템','확인한 라이선스','사용 전 라이선스 확인 기록'],
+  ['license_checked_at','DATE','','시스템','확인일',''],
+  ['row_count','NUMBER','','시스템','적재 건수','빅데이터 규모 수치'],
+  ['checksum_sha256','VARCHAR2(64)','','시스템','원본 파일 해시','같은 파일로 재현했는지 확인'],
+  ['ingested_at','TIMESTAMP','','시스템','적재 시각',''],
+  ['caveat','VARCHAR2(300)','','시스템','도메인 차이 등 유의사항','호텔 데이터·검색 크롤러 봇 등 한계 명시']]}
+];
+const DS=['dataset_id','String','FK','시스템','적재 배치','라이선스·버전 추적','ext_dataset'];
+const V3_OPS = [
+ ['add','member','ci_hash',[
+   ['name','VARCHAR2(50)','','생성','이름','회원가입·예매자 확인'],
+   ['phone_enc','VARCHAR2(200)','','생성','휴대폰 번호 암호문 (AES-256-GCM)','알림 발송에 원문이 필요해 해시 대신 암호화'],
+   ['phone_hash','VARCHAR2(64)','','생성','휴대폰 번호 HMAC','암호문끼리는 비교 불가 → 중복 가입 탐지']]],
+ ['add','member','created_at',[['withdrawn_at','TIMESTAMP','','시스템','탈퇴 시각','소프트 삭제. 위험 이력은 보존 기간 후 파기']]],
+ ['add','train_run','train_id',[['sale_event_id','NUMBER','FK','생성','명절 예매 행사','오픈 일정·정책을 행사 단위로 묶음','sale_event']]],
+ ['add','purchase_limit_policy','policy_id',[['sale_event_id','NUMBER','FK','생성','적용 행사 (null이면 상시)','PER_HOLIDAY 범위 정의','sale_event']]],
+ ['add','reservation_seat','seat_id',[['ticket_no','VARCHAR2(20)','UQ','시스템','승차권 번호','예매 내역·반환·신고 대상 식별']]],
+ ['add','cancellation','refund_amount',[
+   ['cancel_fee','NUMBER(10)','','시스템','취소 수수료','노쇼 억제 수단'],
+   ['fee_policy_id','NUMBER','FK','생성','적용 수수료 정책','','cancel_fee_policy'],
+   ['refund_pg_tx_id','VARCHAR2(64)','','시스템','PG 환불 거래 ID','환불 대사'],
+   ['refund_status','VARCHAR2(10)','','시스템','REQUESTED / DONE / FAILED','환불 실패 재시도']]],
+ ['set','outbox_event','aggregate_id',{type:'VARCHAR2(36)',desc:'reservation_id, case_id 등',reason:'숫자·UUID 키 모두 수용'}],
+ ['add','outbox_event','aggregate_id',[['partition_key','VARCHAR2(64)','','시스템','Kafka 메시지 키','결제·취소 이벤트도 reservation_id를 키로 써야 같은 예약의 이벤트 순서 보장']]],
+ ['add','notification','type',[['ref_type','VARCHAR2(20)','','시스템','RESERVATION / WAITLIST / CASE','ref_id가 어느 테이블을 가리키는지']]],
+ ['add','reservation_history','event_id',[['actor_type','VARCHAR2(10)','','시스템','USER / SYSTEM / ADMIN','누가 상태를 바꿨는지']]],
+ ['add','saga_instance','status',[['timeout_at','TIMESTAMP','','시스템','다음 단계 제한 시각','지나면 보상 실행']]],
+ ['add','auth_session','refresh_token_hash',[['token_family_id','VARCHAR2(36)','','시스템','토큰 계열 ID','회전된 옛 토큰 재사용 시 계열 전체 폐기 (탈취 탐지)']]],
+ ['add','queue_log','run_id',[
+   ['session_id','String','FK','시스템','로그인 세션','CCTV 재생과 연결','auth_session'],
+   ['ticket_no','Long','','시스템','발급 번호표','사용자에게 보인 번호와 대조']]],
+ ['add','model_run','threshold',[['decay_half_life_days','NUMBER(4)','','시스템','점수 반감기 (일)','기간 경과 시 점수 감소 파라미터']]],
+ ['set','seat_inventory','run_id',{keys:'PK,FK'}],
+ ['set','seat_inventory','seat_id',{keys:'PK,FK'}],
+ ['set','seat_inventory','segment_no',{keys:'PK'}],
+ ['notes','seat_inventory','PK(run_id, seat_id, segment_no) — 같은 좌석·구간 중복 점유를 DB가 차단 · seat.train_id = train_run.train_id는 FK로 강제할 수 없어 INSERT 전 애플리케이션 검증 · 서울(1)→대전(3) 예약 시 segment 1, 2 두 행 INSERT, 대전(3)→부산(5)은 3, 4라 재판매 가능 · 확장 과제를 안 하면 segment_no = 0'],
+ ['set','reservation','idempotency_key',{keys:'',reason:'따닥 클릭·재시도 시 중복 예약 방지. UNIQUE 범위는 회원 단위'}],
+ ['notes+','reservation','UNIQUE(member_id, idempotency_key)'],
+ ['set','payment','idempotency_key',{keys:'',reason:'같은 요청 재시도 방지. UNIQUE 범위는 예약 단위'}],
+ ['notes+','payment','UNIQUE(reservation_id, idempotency_key) · 예약당 승인 1건: CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = \'APPROVED\' THEN reservation_id END)'],
+ ['set','admin_action','admin_id',{keys:'FK',fk:'admin_user'}],
+ ['set','suspicious_case','assignee_id',{keys:'FK',fk:'admin_user'}],
+ ['add','suspicious_case','admin_action_id',[['evidence_hash','VARCHAR2(64)','','시스템','증거 조각 해시를 이어 붙인 SHA-256','증거 묶음 전체 무결성. Oracle에 따로 둬서 Mongo 쪽 변조와 분리']]],
+ ['set','case_marker','session_id',{keys:'FK',fk:'auth_session'}],
+ ['set','case_marker','created_by',{keys:'FK',fk:'admin_user'}],
+ ['set','replay_access_log','admin_id',{keys:'FK',fk:'admin_user'}],
+ ['set','replay_access_log','session_id',{keys:'FK',fk:'auth_session'}],
+ ['set','evidence_snapshot','frozen_by',{keys:'FK',fk:'admin_user'}],
+ ['add','evidence_snapshot','session_id',[
+   ['chunk_no','Int','','시스템','조각 번호','문서 1개 16MB 한도 → 이벤트를 나눠 저장'],
+   ['chunk_count','Int','','시스템','전체 조각 수','누락 조각 검사']]],
+ ['set','evidence_snapshot','sha256',{desc:'이 조각 events 해시',reason:'조각별 변조 확인. 전체 해시는 suspicious_case.evidence_hash'}],
+ ['set','evidence_snapshot','events',{desc:'구간 replay_event 복사본 (조각)'}],
+ ['desc','replay_event','화면 행동과 서버 도메인 이벤트를 한 타임라인에 기록. 재생기가 화면을 다시 그린다. 일반 컬렉션.'],
+ ['notes','replay_event','UNIQUE { session_id: 1, seq: 1 } (재전송 중복 제거) + TTL { ts: 1 } 90일 · 시계열 컬렉션은 metaField=session_id면 세션마다 버킷이 생기고 unique 인덱스를 못 걸어 제외 · DOM 녹화(rrweb)는 확장 과제'],
+ ['set','replay_event','session_id',{keys:'PK,FK',desc:'녹화 세션',reason:'session_id+seq 유니크로 재전송 중복 제거'}],
+ ['set','replay_event','seq',{keys:'PK'}],
+ ['set','replay_event','ts',{desc:'이벤트 시각 (ms)',reason:'TTL 기준'}],
+ ['add','ext_hotel_booking',null,[DS]],
+ ['add','ext_web_access_log',null,[DS]],
+ ['add','ext_renfe_price',null,[DS]],
+ ['add','ext_bot_detection',null,[DS]],
+ ['add','redis_keys','queue:throughput:{runId}',[['queue:pass:{runId}:{memberId}','STRING+TTL','','시스템','입장 토큰 (대기열 통과 증명)','좌석 조회·선점 API가 토큰을 검사해야 대기열 우회 차단']]],
+ ['add','redis_keys','seatmap:{runId}',[
+   ['rate:login:{ipHash}','STRING+TTL','','시스템','로그인 시도 카운터','Argon2 연산 남용·크리덴셜 스터핑 차단'],
+   ['rate:api:{memberId}','STRING+TTL','','시스템','초당 API 호출 수','매크로 요청 폭주 1차 차단']]],
+ ['notes','redis_keys','여러 구간 seat:hold는 Lua 스크립트로 원자적 SET NX · Redis는 빠른 1차 판정, 최종 판정은 seat_inventory PK'],
+ ['notes+','risk_score','회원 대기열 패널티 = 연결된 CI·결제수단·기기 점수 중 최댓값']
+];
+const V4_TABLES = [
+ {id:'app_policy',ko:'운영 설정',g:'ref',desc:'팀이 정하는 운영 값(샘플링 비율, 보관 기간, 대기열 처리량 등)을 코드 수정 없이 바꾸는 키-값 설정. 현재 값은 모두 예시.',notes:'애플리케이션 시작 시 로딩, 변경 시 Redis policy:cache 무효화 · 모델별 임계값·감쇠는 model_run에 두고 여기엔 중복 저장하지 않음',cols:[
+  ['policy_key','VARCHAR2(60)','PK','생성','설정 키 (예: replay.full_record_ratio)','점(.)으로 영역 구분'],
+  ['policy_value','VARCHAR2(200)','','생성','설정 값 (문자열로 저장)',''],
+  ['value_type','VARCHAR2(10)','','생성','NUMBER / STRING / BOOL','읽을 때 형 변환'],
+  ['description','VARCHAR2(300)','','생성','설정 설명',''],
+  ['updated_by','NUMBER','FK','시스템','마지막 변경 관리자','변경 책임 추적','admin_user']],
+  samples:[
+   {policy_key:'inventory.segment_mode',policy_value:'OFF',value_type:'STRING',description:'구간 재고 사용 여부 (OFF면 segment_no=0). 2주차 말 결정'},
+   {policy_key:'queue.admit_per_sec',policy_value:'200',value_type:'NUMBER',description:'초당 대기열 입장 허용 인원'},
+   {policy_key:'queue.pass_ttl_sec',policy_value:'300',value_type:'NUMBER',description:'입장 토큰 유효 시간'},
+   {policy_key:'reservation.pay_deadline_min',policy_value:'10',value_type:'NUMBER',description:'좌석 선점 후 결제 기한(분)'},
+   {policy_key:'risk.member_penalty_rule',policy_value:'MAX',value_type:'STRING',description:'회원 패널티 = 연결된 CI·결제수단·기기 점수 중 최댓값'},
+   {policy_key:'risk.penalty_ms_per_point',policy_value:'1000',value_type:'NUMBER',description:'위험 점수 1점당 대기열 score에 더하는 ms'},
+   {policy_key:'replay.full_record_ratio',policy_value:'0.10',value_type:'NUMBER',description:'전체 녹화 비율 (위험 상위)'},
+   {policy_key:'replay.full_record_score',policy_value:'70',value_type:'NUMBER',description:'이 점수 이상이면 무조건 전체 녹화'},
+   {policy_key:'replay.retention_days',policy_value:'90',value_type:'NUMBER',description:'녹화 보관 기간'},
+   {policy_key:'auth.argon2_params',policy_value:'m=19456,t=2,p=1',value_type:'STRING',description:'Argon2id 파라미터 (OWASP 권장값 중 하나)'},
+   {policy_key:'auth.max_concurrent_hash',policy_value:'32',value_type:'NUMBER',description:'동시 Argon2 검증 수 (해시 1회 약 19MiB)'},
+   {policy_key:'auth.lock_after_failures',policy_value:'5',value_type:'NUMBER',description:'연속 실패 시 잠금 기준'},
+   {policy_key:'auth.lock_minutes',policy_value:'15',value_type:'NUMBER',description:'잠금 시간(분)'}]},
+ {id:'ticket_transfer',ko:'승차권 양도 (확장)',g:'resv',planned:true,desc:'승차권 양도·선물 기록. 양도 횟수와 양도 직후 재판매 패턴을 위험 신호로 쓴다. 발표 후 판단.',notes:'확장 예정 — 지금은 구현하지 않음',cols:[
+  ['transfer_id','NUMBER','PK','시스템','',''],
+  ['ticket_no','VARCHAR2(20)','','시스템','양도한 승차권 번호','reservation_seat.ticket_no'],
+  ['reservation_id','NUMBER','FK','시스템','원 예약','','reservation'],
+  ['from_member_id','NUMBER','FK','시스템','보낸 회원','','member'],
+  ['to_member_id','NUMBER','FK','시스템','받은 회원','같은 상대에게 반복 양도 = 거래 의심','member'],
+  ['transferred_at','TIMESTAMP','','시스템','양도 시각','구매 직후 양도 = 되팔이 신호'],
+  ['status','VARCHAR2(10)','','시스템','REQUESTED / ACCEPTED / CANCELED','']]},
+ {id:'member_push_token',ko:'앱 푸시 토큰 (확장)',g:'member',planned:true,desc:'앱(WebView) 푸시 알림 토큰. 취소표 배정 알림을 앱으로 보낼 때 사용.',notes:'확장 예정 — 앱 배포 시',cols:[
+  ['token_id','NUMBER','PK','시스템','',''],
+  ['member_id','NUMBER','FK','시스템','','','member'],
+  ['device_hash','VARCHAR2(64)','','시스템','기기 지문 해시',''],
+  ['platform','VARCHAR2(10)','','시스템','ANDROID / IOS',''],
+  ['push_token_enc','VARCHAR2(500)','','시스템','푸시 토큰 암호문','발송 시 원문 필요'],
+  ['revoked_at','TIMESTAMP','','시스템','해지 시각','']]},
+ {id:'password_reset_token',ko:'비밀번호 재설정 (확장)',g:'auth',planned:true,desc:'비밀번호 재설정 토큰. 토큰은 무작위 값이라 SHA-256 해시로 저장.',notes:'확장 예정 — 3주차 여유 시',cols:[
+  ['token_id','NUMBER','PK','시스템','',''],
+  ['member_id','NUMBER','FK','시스템','','','member'],
+  ['token_hash','VARCHAR2(64)','UQ','시스템','토큰 SHA-256','원문 미보관'],
+  ['expires_at','TIMESTAMP','','시스템','만료 시각','짧은 유효 시간'],
+  ['used_at','TIMESTAMP','','시스템','사용 시각','1회용'],
+  ['ip_hash','VARCHAR2(64)','','시스템','요청 IP 해시','재설정 남용 탐지']]},
+ {id:'common_code',ko:'공통 코드 (확장)',g:'ref',planned:true,desc:'상태값 코드표. 관리자 화면에서 코드 이름을 보여주거나 새 코드를 추가할 때 사용.',notes:'확장 예정 — 지금은 DDL의 CHECK 제약과 문서 코드표로 대체',cols:[
+  ['code_group','VARCHAR2(40)','PK','시스템','코드 그룹 (예: RESERVATION_STATUS)',''],
+  ['code','VARCHAR2(30)','PK','시스템','코드 값',''],
+  ['code_name','VARCHAR2(100)','','시스템','표시 이름',''],
+  ['sort_order','NUMBER(3)','','시스템','정렬 순서',''],
+  ['use_yn','CHAR(1)','','시스템','사용 여부','']]}
+];
+const V4_OPS = [
+ ['prop','sale_event',{samples:[
+   {sale_event_id:1,name:'2026 추석 (예시)',holiday_from:'2026-09-24',holiday_to:'2026-09-27',sale_open_at:'2026-09-08 07:00',priority_open_at:'2026-09-07 07:00',status:'PLANNED'}]}],
+ ['prop','purchase_limit_policy',{samples:[
+   {policy_id:1,sale_event_id:1,scope:'PER_RESERVATION',max_seats:4,valid_from:'2026-09-07 00:00',valid_to:'2026-09-27 23:59'},
+   {policy_id:2,sale_event_id:1,scope:'PER_RUN',max_seats:4,valid_from:'2026-09-07 00:00',valid_to:'2026-09-27 23:59'},
+   {policy_id:3,sale_event_id:1,scope:'PER_HOLIDAY',max_seats:8,valid_from:'2026-09-07 00:00',valid_to:'2026-09-27 23:59'}]}],
+ ['prop','cancel_fee_policy',{samples:[
+   {fee_policy_id:1,sale_event_id:1,min_minutes_before:4320,max_minutes_before:null,fee_rate:0,after_departure:'N'},
+   {fee_policy_id:2,sale_event_id:1,min_minutes_before:1440,max_minutes_before:4320,fee_rate:0.05,after_departure:'N'},
+   {fee_policy_id:3,sale_event_id:1,min_minutes_before:180,max_minutes_before:1440,fee_rate:0.1,after_departure:'N'},
+   {fee_policy_id:4,sale_event_id:1,min_minutes_before:0,max_minutes_before:180,fee_rate:0.2,after_departure:'N'},
+   {fee_policy_id:5,sale_event_id:1,min_minutes_before:null,max_minutes_before:null,fee_rate:0.4,after_departure:'Y'}]}],
+ ['notes','cancel_fee_policy','예시값이며 실제 코레일 기준이 아님 · 구간은 [min, max) 반열림, max가 null이면 상한 없음 · 같은 행사 안에서 구간이 겹치면 안 됨 · after_departure=Y 행은 출발 후 반환에 적용'],
+ ['prop','model_run',{samples:[
+   {model_version:'rule-2026.11-01',algorithm:'RULE',params:'{"weights":"risk_score 신호별 가중치"}',train_source:'synthetic v1',threshold:80,decay_half_life_days:30,is_active:'Y'},
+   {model_version:'iforest-2026.11-01',algorithm:'IFOREST',params:'{"n_estimators":200,"contamination":0.05}',train_source:'synthetic v1 + ext_web_access_log',threshold:80,decay_half_life_days:30,is_active:'N'}]}],
+ ['add','login_attempt','member_id',[
+   ['actor_type','String','','시스템','MEMBER / ADMIN','관리자 로그인도 같은 방식으로 기록'],
+   ['admin_id','Long','FK','시스템','관리자 로그인일 때','관리자 계정 무차별 대입 탐지','admin_user']]],
+ ['add','auth_session','member_id',[
+   ['actor_type','VARCHAR2(10)','','시스템','MEMBER / ADMIN','관리자 세션은 녹화 대상에서 제외'],
+   ['admin_id','NUMBER','FK','시스템','관리자 세션일 때','','admin_user']]],
+ ['notes+','auth_session',"member_id와 admin_id 중 actor_type에 맞는 하나만 채움: CHECK((actor_type = 'MEMBER' AND member_id IS NOT NULL AND admin_id IS NULL) OR (actor_type = 'ADMIN' AND admin_id IS NOT NULL AND member_id IS NULL))"],
+ ['add','member','phone_hash',[['enc_key_id','VARCHAR2(20)','','시스템','phone_enc 암호화 키 버전','키 교체 시 어느 키로 복호화할지 판별']]],
+ ['add','redis_keys','limit:{runId}:{ciHash}',[['limit:event:{saleEventId}:{ciHash}','STRING','','시스템','명절 전체 구매 매수','PER_HOLIDAY 제한의 빠른 체크']]],
+ ['add','redis_keys','rate:api:{memberId}',[['policy:cache','HASH','','시스템','app_policy 캐시','매 요청마다 DB 조회 방지']]],
+ ['notes+','purchase_limit_policy','매수 집계 대상: HOLD·PAYMENT_PENDING·CONFIRMED (CANCELED·EXPIRED 제외) · 값은 예시'],
+ ['notes+','payment','payment.status=REFUNDED는 cancellation.refund_status=DONE과 같은 트랜잭션에서 갱신'],
+ ['notes+','reservation','from·to 역은 해당 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증)'],
+ ['notes+','admin_action','회원 상태 변경(RESTRICT·BAN)은 member.status와 같은 트랜잭션에서 갱신'],
+ ['set','seat','seat_grade',{desc:'GENERAL / FIRST',reason:'car_type에서 상속. 코드값 통일로 CHECK 제약 적용'}],
+ ['set','fare','seat_grade',{desc:'GENERAL / FIRST',reason:'좌석 등급 코드 통일'}],
+ ['set','waitlist','seat_grade',{desc:'GENERAL / FIRST',reason:'희망 등급. 좌석 등급 코드 통일'}],
+ ['nn-auto',null,{except:['purchase_limit_policy.sale_event_id','cancel_fee_policy.sale_event_id','train_run.sale_event_id','suspicious_case.admin_action_id','suspicious_case.assignee_id','suspicious_case.verdict','waitlist.offered_reservation_id','case_marker.created_by','app_policy.updated_by','auth_session.member_id','auth_session.admin_id','auth_session.revoke_reason','cancellation.fee_policy_id','cancellation.refund_status','risk_score.model_version']}],
+ ['nn','station',['station_name']],['nn','route',['route_name']],['nn','route_station',['station_order','distance_from_origin_km']],
+ ['nn','car_type',['seat_count']],['nn','train',['train_no','train_kind']],['nn','seat',['car_no','seat_no']],
+ ['nn','train_run',['run_date','sale_open_at']],['nn','train_stop',['stop_order']],['nn','fare',['amount','valid_from']],
+ ['nn','purchase_limit_policy',['max_seats']],['nn','sale_event',['name','holiday_from','holiday_to','sale_open_at']],
+ ['nn','member',['email','ci_hash','name']],['nn','member_credential',['password_hash','hash_algo','hash_params','failed_count']],
+ ['nn','admin_user',['login_id','password_hash']],['nn','auth_session',['refresh_token_hash','token_family_id','expires_at']],
+ ['nn','reservation',['ci_hash','seat_count','total_amount','held_at','pay_deadline_at','idempotency_key','version']],
+ ['nn','reservation_seat',['ticket_no','amount']],['nn','reservation_history',['to_status','changed_at']],
+ ['nn','payment',['amount','idempotency_key','requested_at']],['nn','cancellation',['canceled_at','refund_amount','cancel_fee']],
+ ['nn','outbox_event',['aggregate_type','aggregate_id','partition_key','event_type','payload','retry_count']],
+ ['nn','processed_event',['processed_at']],['nn','saga_instance',['current_step']],
+ ['nn','waitlist',['seat_count','requested_at']],['nn','risk_score',['final_score','calculated_at']],
+ ['nn','risk_score_history',['subject_type','subject_hash','final_score','calculated_at']],
+ ['nn','admin_action',['subject_type','subject_hash','acted_at']],['nn','suspicious_case',['subject_type','subject_hash','opened_at']],
+ ['nn','case_marker',['at_ts','label']],['nn','replay_access_log',['purpose','accessed_at']],
+ ['nn','app_policy',['policy_value']],['nn','ext_dataset',['name','source_url','license']],['nn','model_run',['trained_at']]
+];
+
+const DECISIONS_SEED = [
+ {item:'구간 재고 진행 여부',value:'OFF (segment_no = 0)',where:'app_policy inventory.segment_mode',reason:'2주차 말 진행 여부 판단 전까지 단일 구간',status:'예시'},
+ {item:'1인 매수 제한',value:'1회 4매 · 열차당 4매 · 명절 전체 8매',where:'purchase_limit_policy 예시 행',reason:'다계정 합산은 ci_hash 기준',status:'예시'},
+ {item:'취소 수수료 구간·비율',value:'3일 전 0% · 1~3일 5% · 3시간~1일 10% · 3시간 이내 20% · 출발 후 40%',where:'cancel_fee_policy 예시 행',reason:'노쇼 억제 효과를 가상 데이터로 비교. 실제 코레일 기준 아님',status:'예시'},
+ {item:'결제 기한',value:'10분',where:'app_policy reservation.pay_deadline_min',reason:'Redis seat:hold TTL과 같은 값',status:'예시'},
+ {item:'대기열 입장 처리량',value:'초당 200명 · 입장 토큰 300초',where:'app_policy queue.*',reason:'부하 테스트로 조정',status:'예시'},
+ {item:'회원 패널티 결합 규칙',value:'MAX (최댓값)',where:'app_policy risk.member_penalty_rule',reason:'다계정 중 하나라도 위험하면 묶음 전체 후순위',status:'예시'},
+ {item:'위험 점수 → 대기 지연',value:'1점당 1초',where:'app_policy risk.penalty_ms_per_point',reason:'점수 80이면 80초 뒤로',status:'예시'},
+ {item:'케이스 자동 생성 임계값',value:'80점',where:'model_run.threshold',reason:'모델 버전별로 다르게 둘 수 있게 model_run에 저장',status:'예시'},
+ {item:'점수 감쇠',value:'반감기 30일',where:'model_run.decay_half_life_days',reason:'운영 원칙: 기간 경과 시 점수 감소',status:'예시'},
+ {item:'녹화 샘플링',value:'위험 상위 10% 전체 녹화, 70점 이상 무조건',where:'app_policy replay.*',reason:'저장량과 개인정보 부담 사이 절충',status:'예시'},
+ {item:'녹화 보관 기간',value:'90일 (케이스 연결 시 동결)',where:'app_policy replay.retention_days',reason:'개인정보 최소 보관',status:'예시'},
+ {item:'Argon2id 파라미터',value:'m=19456, t=2, p=1 · 동시 검증 32',where:'app_policy auth.*',reason:'OWASP 권장값 중 하나로 시작, 서버에서 측정 후 조정',status:'예시'},
+ {item:'outbox 보관 시간',value:'발행 완료 후 24시간 · 한 번에 500행',where:'app_policy outbox.*',reason:'릴레이 스캔과 테이블 크기 유지',status:'예시'},
+ {item:'녹화 전송 상한',value:'궤적 50점/이벤트 · 5초 묶음 · 세션당 5000개',where:'app_policy replay.*',reason:'오픈 시각 Mongo 쓰기 폭주 방지',status:'예시'},
+ {item:'로그 적재 묶음',value:'insertMany 1000건',where:'app_policy behavior.batch_size',reason:'Kafka 컨슈머 배치 적재',status:'예시'},
+ {item:'Oracle 에디션',value:'Docker Oracle Free, 파티셔닝 미사용 전제',where:'인프라',reason:'파티셔닝은 부하 테스트 결과를 보고 판단',status:'예시'}
+];
+
+const DOCS = {
+ rules:{title:'공통 규칙',head:['항목','규칙','이유'],rows:[
+  ['PK','NUMBER 시퀀스 또는 Snowflake ID','분산 환경 ID 충돌 방지, Kafka 키로 사용'],
+  ['시간','TIMESTAMP, KST 저장','결제 기한·취소 시간 계산 일관성'],
+  ['공통 컬럼','모든 Oracle 테이블에 created_at, updated_at (DDL 생성 시 자동 추가)','디버깅, 트러블슈팅'],
+  ['식별 해시','*_hash는 HMAC-SHA256(비밀 키). 키는 프로젝트 기간 고정','원문 미보관, 같은 값끼리만 묶임'],
+  ['비밀번호','Argon2id PHC 문자열 (member_credential, admin_user)','솔트·파라미터 내장, 재해싱 가능'],
+  ['토큰','리프레시·재설정 토큰은 SHA-256','고엔트로피 무작위 값이라 느린 해시 불필요'],
+  ['복호화 필요한 개인정보','AES-256-GCM 암호화 + 키 버전 (phone_enc, enc_key_id)','알림 발송 등 원문이 필요한 값'],
+  ['상태값','VARCHAR2 코드. 설명이 "A / B / C" 형식이면 DDL에 CHECK 제약 자동 생성','Enum 추가 시 스키마 변경 최소화'],
+  ['금액','NUMBER(10) 원 단위','부동소수점 오차 방지'],
+  ['Kafka 키','outbox_event.partition_key. 예약 흐름은 모두 reservation_id','같은 예약 이벤트 순서 보장'],
+  ['MongoDB 참조','FK 제약 없음 (점선). 애플리케이션에서 존재 확인','DB가 달라 제약 불가'],
+  ['식별자 길이','DDL 제약 이름은 30자 이내로 자동 축약','Oracle 12.1 이하 호환'],
+  ['비고(notes) 표기','UNIQUE(a, b) · CHECK(조건) · FK(a, b) → 표(c, d) · CREATE INDEX 이름 ON 표 (…); 형식은 DDL에 그대로 반영','편집기가 단일 FK만 그리므로 복합 제약은 비고로 관리'],
+  ['수정 없는 테이블','INSERT만 하는 테이블은 updated_at 생략 (processed_event, reservation_history, app_policy_history)','의미 없는 컬럼 제거'],
+  ['예시 데이터','NOT NULL 컬럼은 예시 행에 반드시 값이 있어야 함 (검사 스크립트가 확인)','DDL의 INSERT 실패 방지']]},
+ flows:{title:'흐름',head:['흐름','단계'],rows:[
+  ['예매','로그인(auth_session) → 대기열(queue:{runId}, 위험 점수만큼 뒤로) → 입장 토큰(queue:pass) → 좌석 조회(seatmap) → 선점(seat:hold + seat_inventory HOLD) → reservation HOLD → outbox SEAT_HELD → 결제(payment) → CONFIRMED'],
+  ['결제 실패·기한 초과','saga_instance 보상 → seat_inventory 행 삭제 + seat:hold 삭제 → reservation EXPIRED → purchase_counter·limit:* 감소 → 취소표 재배정 이벤트. 스캐너가 늦어 HOLD 행이 남아 있어도 hold_expires_at이 지났으면 다음 사람이 재선점(조건부 UPDATE)하고, 같은 트랜잭션에서 이전 예약을 EXPIRED로'],
+  ['좌석 재선점','seat:hold SET NX 성공 → seat_inventory INSERT → PK 충돌이면 UPDATE … WHERE status = HOLD AND hold_expires_at < 지금 → 모든 구간이 1행씩 갱신되면 성공, 아니면 롤백. 이전 예약자가 늦게 결제하면 seat_inventory.reservation_id 불일치로 거부'],
+  ['매수 제한','limit:* Lua INCRBY → 한도 초과면 DECRBY 후 거부 → purchase_counter 조건부 UPDATE(seat_count + n ≤ max)로 최종 판정 → 취소·만료·결제 실패 시 둘 다 감소 → Redis 키가 없으면 purchase_counter에서 복원'],
+  ['outbox 릴레이','PENDING 부분 인덱스로 조회 + FOR UPDATE SKIP LOCKED (인스턴스 여러 개) → Kafka 발행 → PUBLISHED, published_at → 보관 시간 지나면 정리 배치 삭제'],
+  ['로그 적재','behavior_log·replay_event: 앱 → Kafka → 적재 컨슈머 insertMany 배치. 녹화는 클라이언트가 5초 단위로 묶어 전송, 궤적·세션 이벤트 수 상한 적용'],
+  ['운영 설정 변경','app_policy 값 변경 → version + 1 → app_policy_history 한 행 → policy:cache 갱신 → 각 서버가 version 비교 후 다시 로딩'],
+  ['취소','cancellation(수수료 cancel_fee_policy) → 환불(refund_pg_tx_id) → seat_inventory 반환 → waitlist 순서대로 OFFERED → notification → 기한 내 결제 or 다음 대기자'],
+  ['위험 점수','behavior_log·replay_event·cancellation → risk_feature → model_run(활성 모델) → risk_score → risk:* 캐시 → 대기열 score 반영'],
+  ['CCTV','임계 초과·규칙 적중 → suspicious_case → 같은 CI·기기·결제수단 세션 case_session → 자동 case_marker → evidence_snapshot 동결(조각+해시) → 관리자 재생·판정 → admin_action → replay_access_log에 열람 기록'],
+  ['Argon2 로그인','rate:login 확인 → 세마포어 획득(auth.max_concurrent_hash) → Argon2id 검증(없는 계정도 더미 해시) → verify_ms 기록 → needs_rehash면 재해싱 → auth_session 발급']]},
+ trace:{title:'기능 추적표',head:['기능','테이블·키','검증'],rows:[
+  ['회원가입·모의 본인인증','member, member_credential, identity_verification','같은 CI 다계정 생성 테스트'],
+  ['로그인 (Argon2id)','member_credential, auth_session, login_attempt, rate:login','verify_ms p95, 잠금 동작'],
+  ['열차 조회','train, train_run, train_stop, fare, seatmap:{runId}','캐시 적중률'],
+  ['대기열·번호표','queue:{runId}, queue:active, queue:pass, queue_log','입장 토큰 없이 좌석 API 호출 시 거부'],
+  ['좌석 예약·1인 매수 제한','seat_inventory, reservation, reservation_seat, purchase_limit_policy, purchase_counter, sale_event, limit:*','동시 선점 테스트 중복 0건, 같은 CI 동시 요청 한도 초과 0건'],
+  ['결제 (PG 테스트)','payment, payment_method','예약당 APPROVED ≤ 1'],
+  ['예매 내역·취소','reservation_seat.ticket_no, cancellation, cancel_fee_policy','수수료 계산, 환불 상태'],
+  ['취소표 예약 대기','waitlist, notification','대기 순서대로 배정'],
+  ['관리자: 열차·노선·좌석 등록','route, route_station, train, train_car, seat, train_run','좌석 자동 생성 수 = car_type.seat_count 합'],
+  ['관리자: 실시간 현황','Prometheus·Grafana + reservation 집계','대시보드'],
+  ['관리자: 위험 사용자 조치','risk_score, admin_action, admin_user, member.status','조치 후 대기열 반영'],
+  ['CCTV 되돌아보기','replay_session, replay_event, suspicious_case, case_session, case_marker, evidence_snapshot, replay_access_log','증거 해시 재계산 일치'],
+  ['운영 설정','app_policy, app_policy_history, policy:cache','값 변경 후 version 증가·이력·캐시 갱신'],
+  ['빅데이터 분석','ext_dataset, ext_hotel_booking, ext_web_access_log, ext_renfe_price, risk_feature, model_run','정밀도·재현율·F1']]},
+ scenarios:{title:'실패 시나리오',head:['시나리오','막는 장치','결과'],rows:[
+  ['같은 좌석 동시 클릭','seat:hold SET NX → seat_inventory PK','한 명만 성공'],
+  ['구간이 다른 같은 좌석','segment_no가 달라 PK 다름','둘 다 성공 (구간 재판매)'],
+  ['결제 버튼 연타','UNIQUE(reservation_id, idempotency_key)','첫 요청만 처리'],
+  ['키를 바꿔 결제 재시도','예약당 승인 1건 함수 기반 유니크 인덱스','두 번째 승인 저장 실패 → 환불 보상'],
+  ['결제 실패','saga_instance 보상','좌석 복구'],
+  ['결제 기한 초과','seat:hold TTL + (status, pay_deadline_at) 스캐너','Redis·DB 양쪽 반환'],
+  ['Kafka 중복 전달','processed_event','두 번째 skip'],
+  ['DB 저장 후 발행 전 장애','outbox_event','재기동 후 발행'],
+  ['이벤트 순서 뒤섞임','partition_key = reservation_id','순서대로 소비'],
+  ['대기열 우회','queue:pass 토큰 검사','거부'],
+  ['다계정 매수 우회','limit:{runId}:{ciHash}, limit:event:{saleEventId}:{ciHash}','합산 제한'],
+  ['다른 CI 계정 구매','기기·결제수단 묶음 → risk_score → suspicious_case','후순위 + CCTV 확인'],
+  ['로그인 폭주','세마포어 + rate:login','지연은 있어도 다운 없음'],
+  ['관리자 계정 무차별 대입','login_attempt.actor_type=ADMIN + rate:login','잠금'],
+  ['리프레시 토큰 탈취','token_family_id','계열 전체 폐기'],
+  ['녹화 이벤트 재전송','replay_event {session_id, seq} 유니크','중복 없음'],
+  ['녹화 원본 TTL 삭제','legal_hold + evidence_snapshot','증거 보존'],
+  ['이유 없는 녹화 열람','replay_access_log.purpose, SUPERVISOR 권한','감사 기록'],
+  ['운영 값 무단 변경','app_policy.updated_by, app_policy_history','변경자·이전 값 추적'],
+  ['앱 버그로 다른 열차 좌석 선점','seat_inventory 복합 FK (train_id, seat_id)·(run_id, train_id)','INSERT 실패'],
+  ['Redis TTL 만료 후 DB에 HOLD 행이 남은 채 재선점','hold_expires_at 조건부 UPDATE','PK 충돌 없이 이어받음'],
+  ['좌석을 뺏긴 이전 예약자의 늦은 결제','결제 확정 시 seat_inventory.reservation_id 확인','거부 후 환불'],
+  ['같은 CI로 동시에 예약 2건','purchase_counter 조건부 UPDATE','한도 안의 요청만 통과'],
+  ['Redis 재시작으로 매수 카운터 유실','purchase_counter에서 limit:* 복원','제한 유지'],
+  ['오픈 후 outbox 비대','PENDING 부분 인덱스 + 정리 배치','릴레이 속도 유지'],
+  ['인스턴스 여러 대가 같은 대기자에게 제안','FOR UPDATE SKIP LOCKED + WAITING→OFFERED 조건부 UPDATE','한 번만 제안'],
+  ['설정 변경 후 서버마다 다른 값','app_policy.version 비교','다시 로딩']]},
+ gen:{title:'가상 데이터 생성',head:['유형','생성 규칙','근거 데이터'],rows:[
+  ['NORMAL','1~2매, 취소율 낮음, 요청 간격 불규칙, 마우스 곡선','ext_hotel_booking 일반 예약 분포'],
+  ['RESELLER','상한 근처 매수, 다계정·같은 결제수단·같은 기기, 출발 직전 대량 취소','ext_hotel_booking 취소 이력·리드타임'],
+  ['CANCEL_ABUSER','예약 후 단시간 반복 취소','ext_hotel_booking previous_cancellations'],
+  ['MACRO','오픈 직후 집중, interval_ms 짧고 균일, 마우스 직선·등속, 반복 조회','ext_web_access_log, ext_bot_detection'],
+  ['트래픽 분포','오픈 시각 스파이크 후 감쇠, 출발일 근접 시 재증가','ext_renfe_price days_before'],
+  ['정답 라벨','모든 가상 회원에 user_type, 다계정 묶음에 group_id','synthetic_label']]},
+ extension:{title:'확장 계획',head:['항목','지금 준비한 것','나중 작업','판단 시점'],rows:[
+  ['구간 재고','segment_no, app_policy','segment_mode=ON','2주차 말'],
+  ['승차권 양도','ticket_no, ticket_transfer(확장)','양도 기능·위험 신호','발표 후'],
+  ['관리자 2단계 인증','admin_user.mfa_secret_enc','TOTP 검증','3주차 여유 시'],
+  ['교통약자 사전 예매','sale_event.priority_open_at','대상 인증','발표 후'],
+  ['DOM 녹화','replay_event.type 확장','rrweb 이벤트 저장','발표 후'],
+  ['앱 푸시','member_push_token(확장)','푸시 발송','앱 배포 시'],
+  ['비밀번호 재설정','password_reset_token(확장)','메일·문자 발송','3주차 여유 시'],
+  ['코드표','common_code(확장), CHECK 제약','관리자 코드 화면','필요 시'],
+  ['파티셔닝','run_id·시각 컬럼','reservation·payment 운행일 기준 분할','부하 테스트 후'],
+  ['해시 키 교체','pepper_key_id, enc_key_id','*_hash 재계산 배치','운영 전환 시']]},
+ history:{title:'변경 이력',head:['버전','변경'],rows:[
+  ['v1','기준·회원·예약·결제·이벤트·취소표·위험·MongoDB·Redis 33개 테이블'],
+  ['v2','Argon2id 보안 4개, CCTV 되돌아보기 7개, 빅데이터·분석 6개 추가 (49개). 비밀번호를 member_credential로 분리'],
+  ['v3','점검: 대기열 입장 토큰, replay_event 일반 컬렉션화, 증거 조각 저장, 멱등 키 범위, partition_key, admin_user·sale_event·cancel_fee_policy·ext_dataset 추가 (53개)'],
+  ['v4','팀 결정 예시값(app_policy·예시 행), 관리자 로그인·세션 구분, 명절 매수 Redis 키, 확장 예정 테이블 4개, DDL 개선(CHECK·FK 인덱스·이름 축약·예시 INSERT) (58개)'],
+  ['v5','팀 검토 반영: seat_inventory 열차 일치 복합 FK·HOLD 만료 재선점, purchase_counter, outbox 부분 인덱스·정리, reservation·waitlist 인덱스, 수정 없는 테이블 updated_at 생략, 로그 Kafka 적재·녹화 상한, app_policy version·이력, ci_hash 불변, 위험 대상 코드 CHECK, model_run 예시 행 보정 (60개)']]}
+};
+// ===== 스키마 v5: 팀 검토 12건 반영 (2026-11-06) =====
+const V5_TABLES = [
+ {id:'purchase_counter',ko:'매수 카운터',g:'resv',noUpdatedAt:false,desc:'CI별 보유 매수. 매수 제한의 최종 판정을 조건부 UPDATE 한 번으로 원자적으로 처리하고, Redis 카운터가 사라지면 여기서 복원한다.',
+  notes:"갱신: UPDATE purchase_counter SET seat_count = seat_count + :n WHERE scope = :s AND scope_ref_id = :r AND ci_hash = :c AND seat_count + :n <= :max — 1행이면 통과, 0행이면 거부 (행이 없으면 MERGE로 생성) · 취소·만료·결제 실패 시 감소 · 집계 대상: HOLD·PAYMENT_PENDING·CONFIRMED · 행 값이 의심되면 reservation (ci_hash, run_id) 인덱스로 재집계",
+  cols:[
+  ['scope','VARCHAR2(20)','PK','시스템','PER_RUN / PER_HOLIDAY','열차별·명절 전체 제한을 한 테이블에서'],
+  ['scope_ref_id','NUMBER','PK','시스템','run_id 또는 sale_event_id','scope에 따라 가리키는 대상이 달라 FK 미설정'],
+  ['ci_hash','VARCHAR2(64)','PK','시스템','CI 해시','계정이 아닌 사람 단위 합산'],
+  ['seat_count','NUMBER(3)','NN','시스템','현재 보유 매수','조건부 UPDATE로 한도 초과 차단']]},
+ {id:'app_policy_history',ko:'운영 설정 이력',g:'ref',noUpdatedAt:true,desc:'app_policy 값이 바뀔 때마다 한 행. 누가 언제 무엇을 바꿨는지와 캐시 버전을 추적한다.',notes:'INSERT만 하는 테이블 (updated_at 생략)',cols:[
+  ['history_id','NUMBER','PK','시스템','',''],
+  ['policy_key','VARCHAR2(60)','FK,NN','시스템','설정 키','','app_policy'],
+  ['old_value','VARCHAR2(200)','','시스템','변경 전 값','처음 생성이면 null'],
+  ['new_value','VARCHAR2(200)','NN','시스템','변경 후 값',''],
+  ['version','NUMBER','NN','시스템','변경 후 버전','app_policy.version과 같은 값'],
+  ['changed_by','NUMBER','FK','시스템','변경한 관리자','시스템 변경이면 null','admin_user'],
+  ['changed_at','TIMESTAMP','NN','시스템','변경 시각','']]}
+];
+const V5_OPS = [
+ // 1·2. 좌석 재고: 열차 일치 복합 FK, HOLD 만료
+ ['add','seat_inventory','run_id',[['train_id','NUMBER','NN','시스템','좌석이 속한 열차 (= train_run.train_id)','복합 FK 두 개로 다른 열차 좌석 판매를 DB가 차단']]],
+ ['add','seat_inventory','status',[['hold_expires_at','TIMESTAMP','','시스템','HOLD 만료 시각 (SOLD면 null)','Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준']]],
+ ['notes','seat_inventory',"PK(run_id, seat_id, segment_no) — 같은 좌석·구간 중복 점유를 DB가 차단 · FK(train_id, seat_id) → seat(train_id, seat_id) · FK(run_id, train_id) → train_run(run_id, train_id) — 다른 열차 좌석 판매를 DB가 차단 · CHECK((status = 'HOLD' AND hold_expires_at IS NOT NULL) OR (status = 'SOLD' AND hold_expires_at IS NULL)) · CREATE INDEX ix_seatinv_hold ON seat_inventory (CASE WHEN status = 'HOLD' THEN hold_expires_at END); 만료 스캐너용 · 재선점: INSERT가 PK 충돌이면 UPDATE seat_inventory SET reservation_id = :new, hold_expires_at = :exp WHERE run_id = :r AND seat_id = :s AND segment_no = :g AND status = 'HOLD' AND hold_expires_at < SYSTIMESTAMP — 모든 구간이 1행씩 갱신될 때만 성공, 하나라도 0행이면 롤백. 같은 트랜잭션에서 이전 예약을 EXPIRED로 · 결제 확정 시 seat_inventory.reservation_id가 내 예약인지 확인해 늦은 결제 거부 · 서울(1)→대전(3) 예약 시 segment 1, 2 두 행 INSERT, 대전(3)→부산(5)은 3, 4라 재판매 가능 · 확장 과제를 안 하면 segment_no = 0"],
+ ['desc','seat_inventory','운행·좌석·구간 단위 점유. PK와 열차 일치 복합 FK로 중복 예약과 다른 열차 좌석 판매를 DB가 막고, HOLD는 hold_expires_at이 지나면 다음 사람이 이어받는다.'],
+ ['notes+','seat','UNIQUE(train_id, seat_id) — seat_inventory 복합 FK의 참조 대상'],
+ ['notes+','train_run','UNIQUE(run_id, train_id) — seat_inventory 복합 FK의 참조 대상'],
+ // 3. outbox
+ ['notes+','outbox_event',"CREATE INDEX ix_outbox_pending ON outbox_event (CASE WHEN status = 'PENDING' THEN created_at END); 발행 대기만 담는 작은 인덱스 · 릴레이: 같은 CASE 식으로 조회 + FOR UPDATE SKIP LOCKED로 여러 인스턴스 병렬 발행 · 정리 배치: PUBLISHED 행을 published_at 기준 app_policy outbox.retention_hours 후 삭제 · CDC(Debezium)는 부하 테스트 후 판단"],
+ // 4. 매수 제한 보정
+ ['notes','redis_keys','여러 구간 seat:hold는 Lua 스크립트로 원자적 SET NX · limit:*는 Lua로 INCRBY 후 한도 초과면 즉시 DECRBY하고 거부, 취소·만료·결제 실패 시 DECRBY · limit:* 키가 없으면 purchase_counter 값으로 복원 · Redis는 빠른 1차 판정, 최종 판정은 seat_inventory PK와 purchase_counter'],
+ // 5. reservation 인덱스
+ ['notes','reservation',"CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN status IN ('HOLD', 'PAYMENT_PENDING') THEN pay_deadline_at END); 만료 스캐너용. 스캐너 쿼리도 같은 CASE 식으로 조회해야 인덱스를 씀 · CREATE INDEX ix_resv_ci_run ON reservation (ci_hash, run_id); purchase_counter 재집계·Redis 복원 배치용 (1차 판정 Redis, 최종 판정 purchase_counter) · UNIQUE(member_id, idempotency_key) · from·to 역은 해당 운행의 정차역이고 from 순번 < to 순번 (애플리케이션 검증)"],
+ // 6. waitlist
+ ['notes+','waitlist',"CREATE INDEX ix_waitlist_next ON waitlist (run_id, status, requested_at); 다음 대기자 조회용 · 제안: SELECT … WHERE run_id = :r AND status = 'WAITING' ORDER BY requested_at FOR UPDATE SKIP LOCKED → UPDATE waitlist SET status = 'OFFERED' WHERE waitlist_id = :id AND status = 'WAITING' — 1행일 때만 알림 발송 (중복 제안 방지)"],
+ // 7. 수정 없는 테이블
+ ['prop','processed_event',{noUpdatedAt:true}],
+ ['prop','reservation_history',{noUpdatedAt:true}],
+ ['notes+','processed_event','INSERT만 하는 테이블 (updated_at 생략)'],
+ ['notes+','reservation_history','INSERT만 하는 테이블 (updated_at 생략)'],
+ // 8. 로그 쓰기 경로
+ ['notes','behavior_log','인덱스: { ci_hash: 1, ts: -1 }, { run_id: 1, ts: 1 }, TTL { ts: 1 } (예: 180일) · 쓰기 경로: 앱 → Kafka(behavior-log) → 적재 컨슈머가 insertMany 배치 (app_policy behavior.batch_size). 앱이 Mongo에 직접 쓰지 않음 · 샤드 키는 부하 테스트 후 판단 (후보: { ci_hash: "hashed" }) · 점선은 논리 참조'],
+ ['notes+','replay_event','상한: app_policy replay.max_path_points(이벤트당 궤적 점), replay.batch_sec(클라이언트 묶음 전송 간격), replay.max_events_per_session(세션당 이벤트) · 쓰기 경로: 클라이언트 묶음 전송 → API → Kafka → insertMany'],
+ // 9. app_policy 버전·이력
+ ['add','app_policy','policy_value',[['version','NUMBER','NN','시스템','변경할 때마다 1 증가','캐시 무효화 기준 (policy:cache의 version과 다르면 다시 로딩)']]],
+ ['notes','app_policy','애플리케이션 시작 시 로딩 · 값을 바꾸면 version + 1, app_policy_history에 한 행, Redis policy:cache 갱신 · 모델별 임계값·감쇠는 model_run에 두고 여기엔 중복 저장하지 않음 · 값은 모두 예시'],
+ ['prop','app_policy',{samples:[
+   {policy_key:'inventory.segment_mode',policy_value:'OFF',version:1,value_type:'STRING',description:'구간 재고 사용 여부 (OFF면 segment_no=0). 2주차 말 결정'},
+   {policy_key:'queue.admit_per_sec',policy_value:'200',version:1,value_type:'NUMBER',description:'초당 대기열 입장 허용 인원'},
+   {policy_key:'queue.pass_ttl_sec',policy_value:'300',version:1,value_type:'NUMBER',description:'입장 토큰 유효 시간'},
+   {policy_key:'reservation.pay_deadline_min',policy_value:'10',version:1,value_type:'NUMBER',description:'좌석 선점 후 결제 기한(분). seat_inventory.hold_expires_at 계산 기준'},
+   {policy_key:'risk.member_penalty_rule',policy_value:'MAX',version:1,value_type:'STRING',description:'회원 패널티 = 연결된 CI·결제수단·기기 점수 중 최댓값'},
+   {policy_key:'risk.penalty_ms_per_point',policy_value:'1000',version:1,value_type:'NUMBER',description:'위험 점수 1점당 대기열 score에 더하는 ms'},
+   {policy_key:'replay.full_record_ratio',policy_value:'0.10',version:1,value_type:'NUMBER',description:'전체 녹화 비율 (위험 상위)'},
+   {policy_key:'replay.full_record_score',policy_value:'70',version:1,value_type:'NUMBER',description:'이 점수 이상이면 무조건 전체 녹화'},
+   {policy_key:'replay.retention_days',policy_value:'90',version:1,value_type:'NUMBER',description:'녹화 보관 기간'},
+   {policy_key:'replay.max_path_points',policy_value:'50',version:1,value_type:'NUMBER',description:'이벤트 하나의 마우스 궤적 최대 점 수'},
+   {policy_key:'replay.batch_sec',policy_value:'5',version:1,value_type:'NUMBER',description:'클라이언트가 녹화 이벤트를 묶어 보내는 간격(초)'},
+   {policy_key:'replay.max_events_per_session',policy_value:'5000',version:1,value_type:'NUMBER',description:'세션당 녹화 이벤트 상한'},
+   {policy_key:'behavior.batch_size',policy_value:'1000',version:1,value_type:'NUMBER',description:'behavior_log 적재 컨슈머의 insertMany 묶음 크기'},
+   {policy_key:'outbox.retention_hours',policy_value:'24',version:1,value_type:'NUMBER',description:'발행 완료 outbox 행 보관 시간'},
+   {policy_key:'outbox.relay_batch',policy_value:'500',version:1,value_type:'NUMBER',description:'릴레이가 한 번에 가져오는 행 수'},
+   {policy_key:'auth.argon2_params',policy_value:'m=19456,t=2,p=1',version:1,value_type:'STRING',description:'Argon2id 파라미터 (OWASP 권장값 중 하나)'},
+   {policy_key:'auth.max_concurrent_hash',policy_value:'32',version:1,value_type:'NUMBER',description:'동시 Argon2 검증 수 (해시 1회 약 19MiB)'},
+   {policy_key:'auth.lock_after_failures',policy_value:'5',version:1,value_type:'NUMBER',description:'연속 실패 시 잠금 기준'},
+   {policy_key:'auth.lock_minutes',policy_value:'15',version:1,value_type:'NUMBER',description:'잠금 시간(분)'}]}],
+ // v4 예시 행 보정: model_run.trained_at이 NOT NULL인데 예시에 없어 INSERT가 실패하던 문제
+ ['prop','model_run',{samples:[
+   {model_version:'rule-2026.11-01',algorithm:'RULE',params:'{"weights":"risk_score 신호별 가중치"}',train_source:'synthetic v1',trained_at:'2026-11-18 10:00',threshold:80,decay_half_life_days:30,is_active:'Y'},
+   {model_version:'iforest-2026.11-01',algorithm:'IFOREST',params:'{"n_estimators":200,"contamination":0.05}',train_source:'synthetic v1 + ext_web_access_log',trained_at:'2026-11-18 10:00',threshold:80,decay_half_life_days:30,is_active:'N'}]}],
+ // 10. ci_hash 불변
+ ['notes+','member','ci_hash는 변경 불가 (본인인증 결과가 바뀌면 신규 회원으로 처리). 그래서 reservation.ci_hash 비정규화가 안전함'],
+ // 12. 위험 대상 코드 통일 (risk_subject 마스터는 보류)
+ ['set','risk_score_history','subject_type',{desc:'CI / PAYMENT / DEVICE',reason:'대상 유형 코드 통일 (CHECK)'}],
+ ['set','admin_action','subject_type',{desc:'CI / PAYMENT / DEVICE',reason:'대상 유형 코드 통일 (CHECK)'}],
+ // 검사 스크립트 경고로 찾은 것: 상태 이력도 같은 코드로 CHECK
+ ['set','reservation_history','from_status',{reason:'첫 기록이면 null. 허용값은 비고의 CHECK (v4 nn-auto가 NOT NULL로 바꾸지 않도록 설명은 그대로 둠)'}],
+ ['notes+','reservation_history',"CHECK(from_status IN ('HOLD', 'PAYMENT_PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED'))"],
+ ['set','reservation_history','to_status',{desc:'HOLD / PAYMENT_PENDING / CONFIRMED / CANCELED / EXPIRED',reason:'변경 상태. 잘못된 전이(CANCELED→CONFIRMED) 탐지'}]
+];
+const PATCHES = [ {v:3,tables:V3_TABLES,ops:V3_OPS}, {v:4,tables:V4_TABLES,ops:V4_OPS}, {v:5,tables:V5_TABLES,ops:V5_OPS} ];
+const SEED_VERSION = Math.max(2,...PATCHES.map(p=>p.v));
+const LAYOUT = [
+ ['station','route','route_station','fare','common_code'],
+ ['car_type','train','train_car','seat'],
+ ['train_run','train_stop','sale_event','purchase_limit_policy','app_policy','app_policy_history'],
+ ['seat_inventory','reservation','reservation_seat','purchase_counter'],
+ ['payment','cancellation','cancel_fee_policy','reservation_history','ticket_transfer'],
+ ['member','member_credential','identity_verification','payment_method','member_device','member_push_token'],
+ ['auth_session','login_attempt','admin_user','password_reset_token','synthetic_label'],
+ ['outbox_event','processed_event','saga_instance'],
+ ['waitlist','notification'],
+ ['risk_score','risk_score_history','admin_action','model_run'],
+ ['suspicious_case','case_session','case_marker','replay_access_log'],
+ ['replay_session','replay_event','evidence_snapshot'],
+ ['behavior_log','queue_log','redis_keys'],
+ ['risk_feature','ext_dataset','ext_hotel_booking'],
+ ['ext_web_access_log','ext_renfe_price','ext_bot_detection']
+];
+const NW=272, HEAD=39, ROW=22, PADB=6, GAPX=88, GAPY=36;
+const STORE='fairrail-erd-v1';
+
+let bigFade=false, showPlanned=true, decisions=[], tables=[], view={x:20,y:20,k:.7}, sel=null, hidden=new Set(), query='', undoStack=[];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nodeH=t=>HEAD+t.cols.length*ROW+PADB;
+const byId=id=>tables.find(t=>t.id===id);
+const hasK=(c,k)=>c.keys.split(',').includes(k);
+const dbOf=t=>t.db||GROUPS[t.g]?.db||'Oracle';
+
+const convCol=c=>({name:c[0],type:c[1],keys:c[2],src:c[3],desc:c[4],reason:c[5],fk:c[6]||''});
+const convTable=t=>({id:t.id,ko:t.ko,g:t.g,db:t.db||'',big:!!t.big,planned:!!t.planned,noUpdatedAt:!!t.noUpdatedAt,desc:t.desc,notes:t.notes,samples:t.samples?JSON.parse(JSON.stringify(t.samples)):[],x:0,y:0,cols:t.cols.map(convCol)});
+function fromSeedBase(){ return SEED.map(convTable); }
+/* 패치 적용: 새 테이블 추가 → ops 순서대로. 모두 멱등 (두 번 적용해도 결과 같음)
+   ops: ['add',표,뒤에올컬럼|null,[컬럼튜플…]] ['set',표,컬럼,{필드}] ['del',표,컬럼] ['prop',표,{테이블필드}]
+        ['notes',표,문자열] ['notes+',표,문자열] ['desc',표,문자열] ['droptable',표] */
+function applyPatch(list,p){
+  const get=id=>list.find(t=>t.id===id);
+  (p.tables||[]).forEach(sd=>{ if(!get(sd.id)) list.push(convTable(sd)); });
+  (p.ops||[]).forEach(([k,tid,a,b])=>{
+    if(k==='droptable'){ const i=list.findIndex(t=>t.id===tid); if(i>=0){ list.splice(i,1); list.forEach(x=>x.cols.forEach(c=>{if(c.fk===tid)c.fk='';})); } return; }
+    if(k==='nn-auto')return;
+    const t=get(tid); if(!t)return;
+    if(k==='add'){ const cols=b.map(convCol).filter(c=>!t.cols.some(x=>x.name===c.name)); if(!cols.length)return;
+      let i=a==null?0:t.cols.findIndex(c=>c.name===a)+1; if(a!=null&&i===0)i=t.cols.length; t.cols.splice(i,0,...cols); }
+    else if(k==='set'){ const c=t.cols.find(c=>c.name===a); if(c)Object.assign(c,b); }
+    else if(k==='del'){ t.cols=t.cols.filter(c=>c.name!==a); }
+    else if(k==='prop'){ Object.assign(t,JSON.parse(JSON.stringify(a))); }
+    else if(k==='notes') t.notes=a;
+    else if(k==='notes+'){ if(!(t.notes||'').includes(a)) t.notes=(t.notes?t.notes+' · ':'')+a; }
+    else if(k==='desc') t.desc=a;
+    else if(k==='nn'){ a.forEach(n=>{ const c=t.cols.find(c=>c.name===n); if(c&&!hasK(c,'NN'))c.keys=normKeys(c.keys+',NN'); }); }
+  });
+  // nn-auto는 그 패치 시점까지 정의된 테이블에만 적용 (나중 버전 테이블에 다시 적용되지 않게 → 멱등)
+  const known=new Set([...SEED.map(t=>t.id),...PATCHES.filter(x=>x.v<=(p.v||0)).flatMap(x=>(x.tables||[]).map(t=>t.id))]);
+  (p.ops||[]).filter(o=>o[0]==='nn-auto').forEach(([,,o])=>{ const ex=new Set(o.except||[]);
+    list.filter(t=>known.has(t.id)&&(t.db||GROUPS[t.g]?.db)==='Oracle'&&!t.planned).forEach(t=>t.cols.forEach(c=>{
+      if(ex.has(t.id+'.'+c.name)||hasK(c,'PK')||hasK(c,'NN'))return;
+      if(c.fk||enumOf(c)) c.keys=normKeys(c.keys+',NN'); })); });
+  return list;
+}
+const KEY_ORDER=['PK','FK','UQ','NN'];
+function normKeys(k){ const s=new Set(String(k||'').split(',').filter(Boolean)); return KEY_ORDER.filter(x=>s.has(x)).join(','); }
+function applyPatches(list,fromVer){ PATCHES.filter(p=>p.v>fromVer).forEach(p=>applyPatch(list,p)); return list; }
+function fromSeed(){ return applyPatches(fromSeedBase(),2); }
+function autoLayout(){
+  let x=0; const placed=new Set();
+  LAYOUT.forEach(colIds=>{let y=0; colIds.forEach(id=>{const t=byId(id); if(!t)return; t.x=x;t.y=y; y+=nodeH(t)+GAPY; placed.add(id);}); x+=NW+GAPX;});
+  let y=0; tables.filter(t=>!placed.has(t.id)).forEach(t=>{t.x=x;t.y=y;y+=nodeH(t)+GAPY;});
+}
+function save(){try{localStorage.setItem(STORE,JSON.stringify({seedVersion:SEED_VERSION,tables,view,hidden:[...hidden],bigFade,showPlanned,decisions}))}catch(e){}}
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(STORE)||'null');
+    if(s&&Array.isArray(s.tables)&&s.tables.length){tables=s.tables;if(s.view)view=s.view;hidden=new Set(s.hidden||[]);bigFade=!!s.bigFade;showPlanned=s.showPlanned!==false;decisions=Array.isArray(s.decisions)?s.decisions:JSON.parse(JSON.stringify(DECISIONS_SEED));return s;}}catch(e){}
+  return null;
+}
+function placeNew(ids){ const set=new Set(ids); if(!set.size)return;
+  let x0=Math.max(0,...tables.filter(t=>!set.has(t.id)).map(t=>t.x+NW))+GAPX*2;
+  const cols=LAYOUT.map(c=>c.filter(id=>set.has(id))); const rest=ids.filter(id=>!LAYOUT.flat().includes(id)); if(rest.length)cols.push(rest);
+  cols.filter(c=>c.length).forEach(c=>{let y=0; c.forEach(id=>{const t=byId(id); t.x=x0; t.y=y; y+=nodeH(t)+GAPY;}); x0+=NW+GAPX;}); }
+function migrate(ver){ ver=ver||1; if(ver>=SEED_VERSION)return null;
+  const before=new Set(tables.map(t=>t.id));
+  if(ver<2){
+    fromSeedBase().forEach(sd=>{ const t=byId(sd.id); if(!t){tables.push(sd); return;}
+      if(t.big===undefined)t.big=sd.big; if(!t.db&&sd.db)t.db=sd.db;
+      sd.cols.forEach(sc=>{ const c=t.cols.find(c=>c.name===sc.name); if(c&&!c.fk&&sc.fk){c.fk=sc.fk; if(!hasK(c,'FK'))c.keys=['PK','FK','UQ'].filter(k=>k==='FK'||hasK(c,k)).join(',');} }); });
+    const m=byId('member'); if(m){const i=m.cols.findIndex(c=>c.name==='password_hash'&&c.type==='VARCHAR2(100)'); if(i>=0)m.cols.splice(i,1);}
+  }
+  applyPatches(tables,Math.max(ver,2));
+  if(ver<5) DECISIONS_SEED.forEach(d=>{ if(!decisions.some(x=>x.item===d.item)) decisions.push({...d}); });
+  const added=tables.filter(t=>!before.has(t.id)).map(t=>t.id); placeNew(added);
+  return {added:added.length, from:ver};
+}
+function snap(){undoStack.push(JSON.stringify(tables)); if(undoStack.length>60)undoStack.shift(); $('#bUndo').disabled=false;}
+function undo(){ if(!undoStack.length)return; tables=JSON.parse(undoStack.pop()); if(sel&&!byId(sel))sel=null; renderAll(); save(); toast('되돌렸습니다'); $('#bUndo').disabled=!undoStack.length;}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),1600);}
+
+/* ---------- 관계 ---------- */
+function targetRowIndex(target,col){
+  let i=target.cols.findIndex(c=>hasK(c,'PK')&&c.name===col.name);
+  if(i<0)i=target.cols.findIndex(c=>hasK(c,'PK'));
+  return i<0?0:i;
+}
+function links(){
+  const out=[];
+  tables.forEach(t=>t.cols.forEach((c,i)=>{ if(c.fk){const tg=byId(c.fk); if(tg) out.push({from:t,ci:i,to:tg,ti:targetRowIndex(tg,c),col:c});}}));
+  return out;
+}
+const visible=t=>!hidden.has(t.g)&&(showPlanned||!t.planned);
+
+/* ---------- 렌더 ---------- */
+function matchTable(t){ if(!query)return null; const q=query.toLowerCase();
+  const tm=t.id.toLowerCase().includes(q)||(t.ko||'').toLowerCase().includes(q);
+  const cm=t.cols.map(c=>c.name.toLowerCase().includes(q)||(c.desc||'').toLowerCase().includes(q));
+  return {tm, cm, any: tm||cm.some(Boolean)};
+}
+function related(){ if(!sel)return null; const s=new Set([sel]);
+  links().forEach(l=>{ if(l.from.id===sel)s.add(l.to.id); if(l.to.id===sel)s.add(l.from.id);}); return s;}
+
+function renderNodes(){
+  const rel=related();
+  $('#nodes').innerHTML=tables.filter(visible).map(t=>{
+    const m=matchTable(t);
+    let cls='node'; if(t.id===sel)cls+=' sel'; else if(rel&&rel.has(t.id))cls+=' rel'; else if(rel)cls+=' dim';
+    if(m&&!m.any)cls+=' dim';
+    if(bigFade&&t.big)cls+=' faded';
+    if(t.planned)cls+=' planned';
+    const rows=t.cols.map((c,i)=>{
+      const ks=c.keys.split(',').filter(k=>k&&k!=='NN'); const kc=ks.includes('PK')?'pk':ks.includes('FK')?'fk':'';
+      return `<div class="row${m&&m.cm[i]?' hit':''}" data-ci="${i}" title="${esc(c.desc)}"><span class="key ${kc}">${esc(ks.join(' '))}</span><span class="cn">${esc(c.name)}</span><span class="ct">${esc(c.type)}</span></div>`;
+    }).join('');
+    return `<div class="${cls}" data-id="${esc(t.id)}" style="left:${t.x}px;top:${t.y}px;--gc:var(--g-${t.g})"><div class="nh"><span class="nn">${esc(t.id)}</span><span class="nk">${esc(t.ko)}</span>${dbOf(t)!=='Oracle'?`<span class="tag">${dbOf(t)==='MongoDB'?'Mongo':'Redis'}</span>`:''}${t.big?'<span class="tag big">BIG</span>':''}${t.planned?'<span class="tag plan">확장</span>':''}</div><div class="rows">${rows}</div></div>`;
+  }).join('');
+}
+function drawLinks(){
+  const rel=sel;
+  $('#lg').innerHTML=links().filter(l=>visible(l.from)&&visible(l.to)).map(l=>{
+    const a=l.from,b=l.to;
+    const ay=a.y+HEAD+l.ci*ROW+ROW/2, by=b.y+HEAD+l.ti*ROW+ROW/2;
+    let ax,bx,c1,c2;
+    const acx=a.x+NW/2, bcx=b.x+NW/2;
+    if(a===b){ax=a.x+NW;bx=a.x+NW;const d=60;return path(`M${ax} ${ay} C${ax+d} ${ay},${bx+d} ${by},${bx} ${by}`,l,rel);}
+    if(Math.abs(acx-bcx)<NW*.6){ // 같은 열: 오른쪽으로 우회
+      ax=a.x+NW;bx=b.x+NW;const d=46+Math.abs(ay-by)*.08; return path(`M${ax} ${ay} C${ax+d} ${ay},${bx+d} ${by},${bx} ${by}`,l,rel);}
+    if(acx<bcx){ax=a.x+NW;bx=b.x;}else{ax=a.x;bx=b.x+NW;}
+    const dx=Math.max(40,Math.abs(bx-ax)/2)*(acx<bcx?1:-1);
+    return path(`M${ax} ${ay} C${ax+dx} ${ay},${bx-dx} ${by},${bx} ${by}`,l,rel);
+  }).join('');
+}
+function path(d,l,rel){
+  let c='lk'; if(dbOf(l.from)!=='Oracle')c+=' logical';
+  if(bigFade&&(l.from.big||l.to.big))c+=' faded';
+  if(l.from.planned||l.to.planned)c+=' planned';
+  if(rel){ c+=(l.from.id===rel||l.to.id===rel)?' on':' dim'; }
+  return `<path class="${c}" d="${d}" marker-start="url(#mMany)" marker-end="url(#mOne)"/>`;
+}
+function applyView(){ $('#world').style.transform=`translate(${view.x}px,${view.y}px) scale(${view.k})`; $('#zPct').textContent=Math.round(view.k*100)+'%';
+  const st=$('#stage'); st.style.backgroundSize=`${22*view.k}px ${22*view.k}px`; st.style.backgroundPosition=`${view.x}px ${view.y}px`;}
+function renderChips(){
+  const cnt={}; tables.forEach(t=>cnt[t.g]=(cnt[t.g]||0)+1);
+  $('#chips').innerHTML=Object.entries(GROUPS).map(([k,g])=>`<button class="chip${hidden.has(k)?' off':''}" data-g="${k}" style="--gc:var(--g-${k})" aria-pressed="${!hidden.has(k)}"><i></i>${g.name}<b>${cnt[k]||0}</b></button>`).join('');
+}
+function renderMeta(){
+  const cols=tables.reduce((s,t)=>s+t.cols.length,0);
+  $('#meta').textContent=`테이블 ${tables.length} (확장 예정 ${tables.filter(t=>t.planned).length}) · 빅데이터 ${tables.filter(t=>t.big).length} · 컬럼 ${cols} · 관계 ${links().length}`;
+}
+function renderAll(){renderChips();renderNodes();drawLinks();renderPanel();renderMeta();applyView();}
+
+/* ---------- 패널 ---------- */
+function renderPanel(openCol){
+  const panel=$('#panel');
+  if(!sel){
+    panel.classList.add('closed');
+    $('#ph').innerHTML=`<h2>FairRail 스키마</h2><button class="x" data-act="close" aria-label="닫기">×</button>`;
+    const cnt={}; tables.forEach(t=>cnt[t.g]=(cnt[t.g]||0)+1);
+    $('#pb').innerHTML=`
+      <div class="sec"><p class="p">명절 열차 공정 예매 시스템의 Oracle·MongoDB·Redis 구조도입니다. 테이블을 누르면 설명과 컬럼별 이유가 나오고, 그 자리에서 바로 고칠 수 있습니다.</p></div>
+      <div class="sec"><h3>영역</h3><div class="ov-groups">${Object.entries(GROUPS).map(([k,g])=>`<button class="ov-g" data-fitg="${k}" style="--gc:var(--g-${k})"><i></i>${g.name}<b>${g.db} · ${cnt[k]||0}</b></button>`).join('')}</div></div>
+      <div class="sec"><h3>범례</h3><div class="legend">
+        <svg viewBox="0 0 46 12"><path d="M2 6 H44" stroke="var(--link)" stroke-width="1.4"/><path d="M12 6 L2 1 M12 6 L2 11" stroke="var(--link)" stroke-width="1.4" fill="none"/><path d="M38 1 V11 M41 1 V11" stroke="var(--link)" stroke-width="1.4"/></svg><span>FK(다) → PK(1) 관계</span>
+        <svg viewBox="0 0 46 12"><path d="M2 6 H44" stroke="var(--link)" stroke-width="1.4" stroke-dasharray="5 4"/></svg><span>MongoDB 논리 참조 (제약 없음)</span>
+        <span style="font-family:var(--f-mono);font-size:9.5px;border:1px solid var(--line);border-radius:4px;padding:1px 4px;color:var(--muted);justify-self:start">BIG</span><span>대량 적재 컬렉션 · 상단 "빅데이터" 버튼으로 흐리게</span>
+        <span style="font-family:var(--f-mono);font-size:11px;color:var(--g-wait)">PK</span><span>기본키 · <span style="font-family:var(--f-mono);font-size:11px;color:var(--g-event)">FK</span> 외래키 · <span style="font-family:var(--f-mono);font-size:11px;color:var(--muted)">UQ</span> 유니크 · NN(NOT NULL)은 패널에서 확인</span>
+      </div></div>
+      <div class="sec"><h3>사용법</h3><ol class="steps">
+        <li>배경을 드래그해 이동, 휠이나 두 손가락으로 확대·축소</li>
+        <li>테이블 머리를 드래그해 자리 이동</li>
+        <li>테이블이나 컬럼을 누르면 설명·이유 확인 및 수정</li>
+        <li>컬럼의 FK 대상을 고르면 관계선이 생깁니다</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기, <kbd>Esc</kbd> 선택 해제</li>
+        <li>"빅데이터" 버튼을 켜면 대량 로그·외부 데이터셋이 흐려져 서비스 구조만 보입니다</li>
+        <li>점선 테두리는 확장 예정 테이블. "확장 예정" 버튼으로 숨길 수 있습니다</li>
+        <li>수정 내용은 이 브라우저에 자동 저장. 팀 공유는 JSON 내보내기로</li>
+      </ol></div>
+      <div class="sec"><h3>팀 결정 사항 <span class="stat">예시값</span><button class="btn sm" data-act="docs" data-tab="decisions">전체 보기</button></h3>
+        <div class="dec-list">${decisions.slice(0,6).map(d=>`<div><span>${esc(d.item)}</span><span>${esc(d.value)}</span></div>`).join('')}</div></div>
+      <div class="sec"><h3>설계 문서</h3><div class="ov-groups">${Object.entries(DOCS).map(([k,d])=>`<button class="ov-g" data-act="docs" data-tab="${k}" style="--gc:var(--accent)"><i></i>${d.title}<b>${d.rows.length}</b></button>`).join('')}</div></div>`;
+    return;
+  }
+  panel.classList.remove('closed');
+  const t=byId(sel); const L=links();
+  const out=L.filter(l=>l.from===t), inc=L.filter(l=>l.to===t&&l.from!==t);
+  $('#ph').innerHTML=`<span class="gtag" style="--gc:var(--g-${t.g})">${GROUPS[t.g]?.name||t.g}</span><h2>${esc(t.ko||t.id)}</h2><button class="x" data-act="close" aria-label="닫기">×</button>`;
+  const optG=Object.entries(GROUPS).map(([k,g])=>`<option value="${k}"${k===t.g?' selected':''}>${g.name} (${g.db})</option>`).join('');
+  const optT=v=>`<option value="">— 없음 —</option>`+tables.filter(x=>x.id!==t.id||true).map(x=>`<option value="${esc(x.id)}"${x.id===v?' selected':''}>${esc(x.id)}</option>`).join('');
+  const optS=v=>SRCS.map(s=>`<option${s===v?' selected':''}>${s}</option>`).join('')+(v&&!SRCS.includes(v)?`<option selected>${esc(v)}</option>`:'');
+  $('#pb').innerHTML=`
+    <div class="sec">
+      <div class="two"><label class="fld"><span>테이블명</span><input class="mono" id="f-id" data-f="id" value="${esc(t.id)}"></label>
+      <label class="fld"><span>한글명</span><input id="f-ko" data-f="ko" value="${esc(t.ko)}"></label></div>
+      <label class="fld"><span>영역</span><select id="f-g" data-f="g">${optG}</select></label>
+      <div class="two"><label class="fld"><span>저장소</span><select id="f-db" data-f="db">${['Oracle','MongoDB','Redis'].map(d=>`<option${d===dbOf(t)?' selected':''}>${d}</option>`).join('')}</select></label>
+      <div class="fld"><span>분류</span><div class="keys" style="min-height:34px"><label><input type="checkbox" id="f-big" data-f="big"${t.big?' checked':''}>빅데이터</label><label><input type="checkbox" id="f-planned" data-f="planned"${t.planned?' checked':''}>확장 예정</label><label title="INSERT만 하는 테이블"><input type="checkbox" id="f-noupd" data-f="noUpdatedAt"${t.noUpdatedAt?' checked':''}>updated_at 생략</label></div></div></div>
+      <label class="fld"><span>설명</span><textarea id="f-desc" data-f="desc">${esc(t.desc)}</textarea></label>
+      <label class="fld"><span>제약·인덱스·비고 <small>(UNIQUE(a, b) 형식은 DDL에 반영)</small></span><textarea id="f-notes" data-f="notes">${esc(t.notes)}</textarea></label>
+    </div>
+    <div class="sec"><h3>예시 데이터 ${(t.samples||[]).length}행${(t.samples||[]).length?' <span class="stat">예시값</span>':''}</h3>
+      ${(t.samples||[]).length?`<div class="samples">${sampleTable(t.samples)}</div>`:'<p class="p muted">예시 행이 없습니다. 아래에 JSON 배열로 추가할 수 있습니다.</p>'}
+      <details class="col"><summary><span class="cn">예시 행 JSON 편집</span></summary><div class="cbody"><label class="fld"><span>[{ "컬럼": 값, … }] 형식 · 칸을 벗어나면 적용</span><textarea class="mono" id="f-samples" data-sj="1" style="min-height:120px;font-family:var(--f-mono);font-size:12px">${esc(JSON.stringify(t.samples||[],null,1))}</textarea></label></div></details>
+    </div>
+    <div class="sec"><h3>관계 ${out.length+inc.length}</h3>
+      ${out.length+inc.length?`<div class="rel-list">${out.map(l=>`<button class="rel-item" data-go="${esc(l.to.id)}"><span class="dir">참조 →</span>${esc(l.col.name)} → ${esc(l.to.id)}</button>`).join('')}${inc.map(l=>`<button class="rel-item" data-go="${esc(l.from.id)}"><span class="dir">← 피참조</span>${esc(l.from.id)}.${esc(l.col.name)}</button>`).join('')}</div>`:'<p class="p muted">연결된 테이블이 없습니다.</p>'}
+    </div>
+    <div class="sec"><h3>컬럼 ${t.cols.length}<button class="btn sm" data-act="addcol">＋ 컬럼</button></h3>
+      ${t.cols.map((c,i)=>`
+      <details class="col" data-ci="${i}"${openCol===i?' open':''}>
+        <summary><span class="key">${esc(c.keys.split(',').filter(Boolean).join(' '))}</span><span class="cn">${esc(c.name)}</span><span class="ct">${esc(c.type)}</span></summary>
+        <div class="cbody">
+          ${(c.desc||c.reason)?`<p class="desc-view">${c.desc?`<b>${esc(c.desc)}</b>`:''}${c.desc&&c.reason?'<br>':''}${c.reason?`이유: ${esc(c.reason)}`:''}</p>`:''}
+          <div class="two"><label class="fld"><span>컬럼명</span><input class="mono" id="c${i}-name" data-cf="name" data-ci="${i}" value="${esc(c.name)}"></label>
+          <label class="fld"><span>타입</span><input class="mono" id="c${i}-type" data-cf="type" data-ci="${i}" value="${esc(c.type)}"></label></div>
+          <div class="keys">${['PK','FK','UQ','NN'].map(k=>`<label title="${k==='NN'?'NOT NULL':k}"><input type="checkbox" id="c${i}-k${k}" data-ck="${k}" data-ci="${i}"${hasK(c,k)?' checked':''}>${k}</label>`).join('')}</div>
+          <div class="two"><label class="fld"><span>FK 대상 테이블</span><select id="c${i}-fk" data-cf="fk" data-ci="${i}">${optT(c.fk)}</select></label>
+          <label class="fld"><span>출처</span><select id="c${i}-src" data-cf="src" data-ci="${i}">${optS(c.src)}</select></label></div>
+          <label class="fld"><span>설명</span><input id="c${i}-desc" data-cf="desc" data-ci="${i}" value="${esc(c.desc)}"></label>
+          <label class="fld"><span>이유</span><textarea id="c${i}-reason" data-cf="reason" data-ci="${i}">${esc(c.reason)}</textarea></label>
+          <div class="colacts"><button class="btn sm" data-act="up" data-ci="${i}"${i===0?' disabled':''}>↑ 위로</button><button class="btn sm" data-act="down" data-ci="${i}"${i===t.cols.length-1?' disabled':''}>↓ 아래로</button><button class="btn sm danger" data-act="delcol" data-ci="${i}">컬럼 삭제</button></div>
+        </div>
+      </details>`).join('')}
+    </div>
+    <div class="sec"><button class="btn danger" data-act="deltable">테이블 삭제</button></div>`;
+  if(openCol!=null){ const d=$(`details.col[data-ci="${openCol}"]`); d&&d.scrollIntoView({block:'nearest'}); }
+}
+
+function sampleTable(rows){ const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+  return `<table class="dt"><thead><tr>${keys.map(k=>`<th>${esc(k)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${keys.map(k=>`<td class="mono">${r[k]==null?'<span style="color:var(--muted)">null</span>':esc(r[k])}</td>`).join('')}</tr>`).join('')}</tbody></table>`; }
+function select(id,openCol){ sel=id; renderNodes(); drawLinks(); renderPanel(openCol); }
+
+/* 패널 입력 */
+const pb=$('#pb'); let snapped=null;
+pb.addEventListener('focusin',e=>{ if(e.target.matches('input,select,textarea')&&snapped!==e.target){snap();snapped=e.target;} });
+pb.addEventListener('focusout',()=>{snapped=null;});
+pb.addEventListener('input',e=>{
+  const el=e.target, t=byId(sel); if(!t)return;
+  if(el.dataset.f&&el.dataset.f!=='id'){ t[el.dataset.f]=el.type==='checkbox'?el.checked:el.value; if(el.dataset.f==='big'||el.dataset.f==='db'||el.dataset.f==='planned')renderMeta();
+    if(el.dataset.f==='ko'){$('#ph h2').textContent=el.value||t.id;}
+    if(el.dataset.f==='g'){ renderChips(); $('#ph .gtag').textContent=GROUPS[el.value].name; $('#ph .gtag').style.setProperty('--gc',`var(--g-${el.value})`);}
+    renderNodes(); drawLinks(); save(); return; }
+  if(el.dataset.cf){ const c=t.cols[+el.dataset.ci]; const f=el.dataset.cf; c[f]=el.value;
+    if(f==='fk'&&el.value&&!hasK(c,'FK')){ setKey(c,'FK',true); const cb=$(`#c${el.dataset.ci}-kFK`); if(cb)cb.checked=true; }
+    const sm=el.closest('details').querySelector('summary');
+    sm.querySelector('.cn').textContent=c.name; sm.querySelector('.ct').textContent=c.type; sm.querySelector('.key').textContent=c.keys.split(',').filter(Boolean).join(' ');
+    renderNodes(); drawLinks(); renderMeta(); save(); return; }
+  if(el.dataset.ck){ const c=t.cols[+el.dataset.ci]; setKey(c,el.dataset.ck,el.checked);
+    el.closest('details').querySelector('summary .key').textContent=c.keys.split(',').filter(Boolean).join(' ');
+    renderNodes(); drawLinks(); save(); }
+});
+pb.addEventListener('change',e=>{
+  const el=e.target;
+  if(el.dataset.sj){ const t=byId(sel); try{ const v=JSON.parse(el.value||'[]'); if(!Array.isArray(v)||!v.every(r=>r&&typeof r==='object'))throw new Error('객체 배열이어야 합니다');
+      t.samples=v; save(); renderPanel(); toast(`예시 ${v.length}행 적용`); }catch(err){ toast('예시 JSON 오류: '+err.message); } return; } if(el.dataset.f!=='id')return; const t=byId(sel); const nv=el.value.trim().replace(/\s+/g,'_');
+  if(!nv||nv===t.id){el.value=t.id;return;}
+  if(byId(nv)){toast('같은 이름의 테이블이 이미 있습니다');el.value=t.id;return;}
+  const old=t.id; tables.forEach(x=>x.cols.forEach(c=>{if(c.fk===old)c.fk=nv;})); t.id=nv; sel=nv; renderAll(); save();
+});
+function setKey(c,k,on){ const s=new Set(c.keys.split(',').filter(Boolean)); on?s.add(k):s.delete(k); c.keys=KEY_ORDER.filter(x=>s.has(x)).join(','); }
+
+let armed=null;
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act],[data-go],[data-fitg],.chip'); if(!b)return;
+  if(b.classList.contains('chip')){ const g=b.dataset.g; hidden.has(g)?hidden.delete(g):hidden.add(g); if(sel&&hidden.has(byId(sel)?.g))sel=null; renderAll(); save(); return; }
+  if(b.dataset.go){ const t=byId(b.dataset.go); if(!t){toast('구조도에 없는 테이블입니다');return;} $('#docs').hidden=true; if(hidden.has(t.g)){hidden.delete(t.g);renderChips();} if(t.planned&&!showPlanned){showPlanned=true;syncPlan();} if(t.big&&bigFade){bigFade=false;syncBig();} select(t.id); centerOn(t); return; }
+  if(b.dataset.fitg){ hidden.delete(b.dataset.fitg); renderAll(); fit(tables.filter(t=>t.g===b.dataset.fitg)); return; }
+  const a=b.dataset.act, t=byId(sel);
+  if(a==='close'){ select(null); return; }
+  if(a==='docs'){ openDocs(b.dataset.tab); return; }
+  if(!t)return;
+  const i=+b.dataset.ci;
+  if(a==='addcol'){ snap(); t.cols.push({name:'new_column',type:'VARCHAR2(50)',keys:'',src:'생성',desc:'',reason:'',fk:''}); renderNodes(); drawLinks(); renderMeta(); renderPanel(t.cols.length-1); save(); setTimeout(()=>{const f=$(`#c${t.cols.length-1}-name`);f&&f.select();},0); }
+  if(a==='up'&&i>0){ snap(); [t.cols[i-1],t.cols[i]]=[t.cols[i],t.cols[i-1]]; renderNodes(); drawLinks(); renderPanel(i-1); save(); }
+  if(a==='down'&&i<t.cols.length-1){ snap(); [t.cols[i+1],t.cols[i]]=[t.cols[i],t.cols[i+1]]; renderNodes(); drawLinks(); renderPanel(i+1); save(); }
+  if(a==='delcol'||a==='deltable'){
+    const key=a+':'+sel+':'+(a==='delcol'?i:'');
+    if(armed!==key){ armed=key; b.classList.add('armed'); b.textContent='한 번 더 누르면 삭제'; setTimeout(()=>{ if(armed===key){armed=null; b.classList.remove('armed'); b.textContent=a==='delcol'?'컬럼 삭제':'테이블 삭제';}},2500); return; }
+    armed=null; snap();
+    if(a==='delcol'){ t.cols.splice(i,1); renderNodes(); drawLinks(); renderMeta(); renderPanel(); toast('컬럼을 삭제했습니다'); }
+    else { tables=tables.filter(x=>x!==t); tables.forEach(x=>x.cols.forEach(c=>{if(c.fk===t.id)c.fk='';})); sel=null; renderAll(); toast(`${t.id} 삭제됨 · Ctrl+Z로 되돌리기`); }
+    save();
+  }
+});
+
+/* ---------- 캔버스 조작 ---------- */
+const stage=$('#stage'); const pointers=new Map(); let drag=null, pinch=null;
+function stagePt(e){const r=stage.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+function zoomAt(k,cx,cy){ k=Math.min(2.5,Math.max(.15,k)); const wx=(cx-view.x)/view.k, wy=(cy-view.y)/view.k; view.k=k; view.x=cx-wx*k; view.y=cy-wy*k; applyView(); }
+stage.addEventListener('pointerdown',e=>{
+  if(e.target.closest('.zoombox')||e.button>0)return;
+  stage.setPointerCapture(e.pointerId); pointers.set(e.pointerId,stagePt(e));
+  if(pointers.size===2){ const [p1,p2]=[...pointers.values()]; pinch={d:Math.hypot(p1.x-p2.x,p1.y-p2.y),k:view.k}; drag=null; return; }
+  const node=e.target.closest('.node'); const p=stagePt(e);
+  if(node){ const t=byId(node.dataset.id); const row=e.target.closest('.row');
+    drag={type:'node',t,el:node,sx:p.x,sy:p.y,ox:t.x,oy:t.y,moved:false,ci:row?+row.dataset.ci:null}; }
+  else { drag={type:'pan',sx:p.x,sy:p.y,ox:view.x,oy:view.y,moved:false}; }
+});
+stage.addEventListener('pointermove',e=>{
+  if(!pointers.has(e.pointerId))return; const p=stagePt(e); pointers.set(e.pointerId,p);
+  if(pinch&&pointers.size===2){ const [p1,p2]=[...pointers.values()]; const d=Math.hypot(p1.x-p2.x,p1.y-p2.y); zoomAt(pinch.k*d/pinch.d,(p1.x+p2.x)/2,(p1.y+p2.y)/2); return; }
+  if(!drag)return; const dx=p.x-drag.sx, dy=p.y-drag.sy;
+  if(!drag.moved&&Math.hypot(dx,dy)<4)return;
+  if(!drag.moved){ drag.moved=true; if(drag.type==='node')snap(); else stage.classList.add('panning'); }
+  if(drag.type==='node'){ drag.t.x=Math.round(drag.ox+dx/view.k); drag.t.y=Math.round(drag.oy+dy/view.k); drag.el.style.left=drag.t.x+'px'; drag.el.style.top=drag.t.y+'px'; drawLinks(); }
+  else { view.x=drag.ox+dx; view.y=drag.oy+dy; applyView(); }
+});
+function endPtr(e){
+  pointers.delete(e.pointerId); stage.classList.remove('panning');
+  if(pinch){ if(pointers.size<2)pinch=null; save(); drag=null; return; }
+  if(!drag)return;
+  if(!drag.moved){ if(drag.type==='node')select(drag.t.id,drag.ci); else if(sel)select(null); }
+  save(); drag=null;
+}
+stage.addEventListener('pointerup',endPtr); stage.addEventListener('pointercancel',endPtr);
+stage.addEventListener('wheel',e=>{ e.preventDefault(); const p=stagePt(e);
+  if(e.shiftKey){ view.x-=(e.deltaY||e.deltaX); applyView(); }
+  else zoomAt(view.k*Math.exp(-e.deltaY*.0022),p.x,p.y);
+  clearTimeout(stage._s); stage._s=setTimeout(save,300);
+},{passive:false});
+$('#zIn').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(view.k*1.2,r.width/2,r.height/2);save();};
+$('#zOut').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(view.k/1.2,r.width/2,r.height/2);save();};
+$('#zPct').onclick=()=>{const r=stage.getBoundingClientRect();zoomAt(1,r.width/2,r.height/2);save();};
+$('#zFit').onclick=()=>{fit();save();};
+function fit(list){ list=(list||tables).filter(visible); if(!list.length)return; const r=stage.getBoundingClientRect();
+  const x0=Math.min(...list.map(t=>t.x)), y0=Math.min(...list.map(t=>t.y)), x1=Math.max(...list.map(t=>t.x+NW)), y1=Math.max(...list.map(t=>t.y+nodeH(t)));
+  const pad=48, k=Math.min(1.2,Math.max(.15,Math.min((r.width-pad*2)/(x1-x0),(r.height-pad*2)/(y1-y0))));
+  view.k=k; view.x=(r.width-(x1-x0)*k)/2-x0*k; view.y=(r.height-(y1-y0)*k)/2-y0*k; applyView(); }
+function centerOn(t){ const r=stage.getBoundingClientRect(); const k=Math.max(view.k,.8); view.k=k; view.x=r.width/2-(t.x+NW/2)*k; view.y=Math.min(40,r.height/2-(t.y+nodeH(t)/2)*k); if(nodeH(t)*k<r.height-80)view.y=r.height/2-(t.y+nodeH(t)/2)*k; applyView(); save(); }
+
+/* ---------- 상단 버튼 ---------- */
+function syncBig(){ const b=$('#bBig'); b.setAttribute('aria-pressed',bigFade); }
+$('#bBig').onclick=()=>{ bigFade=!bigFade; if(bigFade&&sel&&byId(sel)?.big)sel=null; syncBig(); renderNodes(); drawLinks(); renderPanel(); save(); toast(bigFade?'빅데이터 테이블을 흐리게 했습니다':'빅데이터 테이블을 다시 표시합니다'); };
+function syncPlan(){ $('#bPlan').setAttribute('aria-pressed',showPlanned); }
+$('#bPlan').onclick=()=>{ showPlanned=!showPlanned; if(!showPlanned&&sel&&byId(sel)?.planned)sel=null; syncPlan(); renderAll(); save(); toast(showPlanned?'확장 예정 테이블을 표시합니다':'확장 예정 테이블을 숨겼습니다'); };
+$('#bUndo').onclick=undo; $('#bUndo').disabled=true;
+$('#bLayout').onclick=()=>{snap();autoLayout();renderNodes();drawLinks();fit();save();toast('기본 배치로 정렬했습니다');};
+$('#bAdd').onclick=()=>{ snap(); const r=stage.getBoundingClientRect(); let n=1; while(byId('new_table_'+n))n++;
+  const id='new_table_'+n; const g=sel?byId(sel).g:'ref'; hidden.delete(g);
+  tables.push({id,ko:'새 테이블',g,desc:'',notes:'',x:Math.round((r.width/2-view.x)/view.k-NW/2),y:Math.round((r.height/3-view.y)/view.k),
+    cols:[{name:'id',type:'NUMBER',keys:'PK',src:'시스템',desc:'',reason:'',fk:''}]});
+  sel=id; renderAll(); save(); setTimeout(()=>{$('#f-id').select();},0); };
+$('#q').addEventListener('input',e=>{ query=e.target.value.trim(); renderNodes(); });
+$('#q').addEventListener('keydown',e=>{ if(e.key==='Enter'){ const t=tables.filter(visible).find(t=>matchTable(t)?.any); if(t){select(t.id);centerOn(t);} else toast('일치하는 항목이 없습니다'); }});
+document.addEventListener('keydown',e=>{
+  const typing=e.target.matches('input,textarea,select');
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!typing){e.preventDefault();undo();}
+  if(e.key==='Escape'){ if(!$('#docs').hidden)$('#docs').hidden=true; else if(!$('#modal').hidden)closeModal(); else if(sel)select(null); }
+});
+window.addEventListener('resize',()=>applyView());
+
+/* ---------- 문서 ---------- */
+let dtab='decisions';
+const tableIds=()=>new Set(tables.map(t=>t.id));
+function linkify(text){ const ids=tableIds(); return esc(text).replace(/[a-z][a-z0-9_]*[a-z0-9]/g,w=>ids.has(w)?`<button class="tref" data-go="${w}">${w}</button>`:w); }
+function openDocs(t){ if(t)dtab=t; $('#docs').hidden=false; renderDocs(); }
+function renderDocs(){
+  const tabs=[['decisions','팀 결정 사항'],...Object.entries(DOCS).map(([k,d])=>[k,d.title])];
+  $('#dtabs').innerHTML=tabs.map(([k,n])=>`<button class="mtab dtab${k===dtab?' on':''}" data-dtab="${k}">${n}</button>`).join('')+'<button class="btn sm x" data-dact="close">닫기</button>';
+  if(dtab==='decisions'){
+    $('#dbody').innerHTML=`<p class="p muted">팀이 확정하기 전까지 쓰는 예시값입니다. 값을 고치고 상태를 "확정"으로 바꾸세요. 실제 설정값은 연결된 테이블(app_policy 등)의 예시 행도 함께 고쳐야 합니다.</p>
+      <div class="samples"><table class="dt"><thead><tr><th>항목</th><th>값</th><th>반영 위치</th><th>근거</th><th>상태</th><th></th></tr></thead><tbody>
+      ${decisions.map((d,i)=>`<tr>${['item','value','where','reason'].map(f=>`<td><input id="d${i}-${f}" data-di="${i}" data-df="${f}" value="${esc(d[f])}"></td>`).join('')}
+        <td><select id="d${i}-status" data-di="${i}" data-df="status">${['예시','검토 중','확정'].map(s=>`<option${s===d.status?' selected':''}>${s}</option>`).join('')}</select></td>
+        <td><button class="btn sm danger" data-dact="del" data-di="${i}">삭제</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="mfoot" style="margin-top:10px"><button class="btn sm" data-dact="add">＋ 결정 사항 추가</button></div>`;
+    return;
+  }
+  const d=DOCS[dtab];
+  $('#dbody').innerHTML=`<div class="samples"><table class="dt"><thead><tr>${d.head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${d.rows.map(r=>`<tr>${r.map(c=>`<td>${linkify(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+$('#bDocs').onclick=()=>openDocs();
+$('#docs').addEventListener('click',e=>{
+  if(e.target.id==='docs'){ $('#docs').hidden=true; return; }
+  const tb=e.target.closest('[data-dtab]'); if(tb){ dtab=tb.dataset.dtab; renderDocs(); return; }
+  const b=e.target.closest('[data-dact]'); if(!b)return;
+  if(b.dataset.dact==='close') $('#docs').hidden=true;
+  if(b.dataset.dact==='add'){ decisions.push({item:'',value:'',where:'',reason:'',status:'예시'}); save(); renderDocs(); }
+  if(b.dataset.dact==='del'){ decisions.splice(+b.dataset.di,1); save(); renderDocs(); renderPanel(); }
+});
+$('#docs').addEventListener('input',e=>{ const el=e.target; if(el.dataset.df==null)return; decisions[+el.dataset.di][el.dataset.df]=el.value; save(); if(!sel)renderPanel(); });
+
+/* ---------- 내보내기·불러오기 ---------- */
+let tab='json';
+function exportJSON(){ return JSON.stringify({project:'FairRail',version:1,seedVersion:SEED_VERSION,exported_at:new Date().toISOString(),decisions,tables},null,2); }
+function sqlStr(s){return "'"+String(s||'').replace(/'/g,"''")+"'";}
+function ddlType(t){ t=(t||'VARCHAR2(100)').trim(); if(/^CLOB/i.test(t))return 'CLOB'; return t.replace(/\s*\(JSON\)/i,''); }
+const ORA_RESERVED=new Set('ACCESS ADD ALL ALTER AND ANY AS ASC AUDIT BETWEEN BY CHAR CHECK CLUSTER COLUMN COMMENT COMPRESS CONNECT CREATE CURRENT DATE DECIMAL DEFAULT DELETE DESC DISTINCT DROP ELSE EXCLUSIVE EXISTS FILE FLOAT FOR FROM GRANT GROUP HAVING IDENTIFIED IMMEDIATE IN INCREMENT INDEX INITIAL INSERT INTEGER INTERSECT INTO IS LEVEL LIKE LOCK LONG MAXEXTENTS MINUS MLSLABEL MODE MODIFY NOAUDIT NOCOMPRESS NOT NOWAIT NULL NUMBER OF OFFLINE ON ONLINE OPTION OR ORDER PCTFREE PRIOR PUBLIC RAW RENAME RESOURCE REVOKE ROW ROWID ROWNUM ROWS SELECT SESSION SET SHARE SIZE SMALLINT START SUCCESSFUL SYNONYM SYSDATE TABLE THEN TO TRIGGER UID UNION UNIQUE UPDATE USER VALIDATE VALUES VARCHAR VARCHAR2 VIEW WHENEVER WHERE WITH'.split(' '));
+function hash36(s){ let h=2166136261; for(const ch of s){ h^=ch.charCodeAt(0); h=Math.imul(h,16777619)>>>0; } return h.toString(36).padStart(6,'0').slice(0,6); }
+function cname(p,t,c){ const n=c?`${p}_${t}_${c}`:`${p}_${t}`; return n.length<=30?n:`${p}_${t.slice(0,30-p.length-8)}_${hash36(n)}`; }
+function enumOf(c){ const d=(c.desc||'').trim();
+  if(/^[A-Z][A-Z0-9_]*( \/ [A-Z][A-Z0-9_]*)+$/.test(d)) return d.split(' / ');
+  if(/^CHAR\(1\)$/i.test(c.type||'')&&/Y\/N|여부/.test(d)) return ['Y','N'];
+  return null; }
+function notesChecks(t){ const out=[], n=t.notes||''; let i=0;
+  while((i=n.indexOf('CHECK(',i))>=0){ let d=0,j=i+5; for(;j<n.length;j++){ if(n[j]==='(')d++; else if(n[j]===')'){ d--; if(!d)break; } } out.push(n.slice(i+6,j)); i=j; } return out; }
+function compositeFks(t){ const out=[]; (t.notes||'').replace(/FK\(([^)]+)\)\s*→\s*(\w+)\(([^)]+)\)/g,(m,a,ref,b)=>{ out.push({cols:a.split(',').map(x=>x.trim()),ref,refCols:b.split(',').map(x=>x.trim())}); }); return out; }
+function notesIndexes(t){ return ((t.notes||'').match(/CREATE (?:UNIQUE )?INDEX [^;·]+/g)||[]).map(x=>x.trim()); }
+function indexLeads(t){ return notesIndexes(t).map(x=>{ const m=x.match(/ON \w+ \(([^)]+)\)/); const c=m&&m[1].split(',')[0].trim(); return /^[a-z_][a-z0-9_]*$/.test(c||'')?c:null; }).filter(Boolean); }
+function uniqueGroups(t){ const g=[]; (t.notes||'').replace(/UNIQUE\(([^)]+)\)/g,(m,x)=>{g.push(x.split(',').map(s=>s.trim()));}); return g; }
+function sqlVal(v){ if(v==null)return 'NULL'; if(typeof v==='number')return String(v);
+  const s=String(v); if(/^\d{4}-\d{2}-\d{2}$/.test(s))return `DATE '${s}'`; if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s))return `TIMESTAMP '${s}:00'`; return sqlStr(s); }
+function exportDDL(){
+  const ora=tables.filter(t=>dbOf(t)==='Oracle'&&!t.planned), skipped=tables.filter(t=>dbOf(t)==='Oracle'&&t.planned); const L=[], warn=[];
+  L.push('-- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v'+SEED_VERSION+')','-- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약','-- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성');
+  if(skipped.length)L.push('-- 확장 예정이라 제외: '+skipped.map(t=>t.id).join(', '));
+  L.push('');
+  ora.forEach(t=>{
+    const cols=t.cols.map(c=>({...c})); (t.noUpdatedAt?['created_at']:['created_at','updated_at']).forEach(n=>{ if(!cols.some(c=>c.name===n))cols.push({name:n,type:'TIMESTAMP',keys:'',desc:n==='created_at'?'생성 시각':'수정 시각'}); });
+    cols.forEach(c=>{ if(ORA_RESERVED.has(c.name.toUpperCase()))warn.push(`${t.id}.${c.name}`); if(c.name.length>30)warn.push(`${t.id}.${c.name} (30자 초과)`); });
+    const lines=cols.map(c=>`  ${c.name.padEnd(26)} ${ddlType(c.type)}${c.name==='created_at'||c.name==='updated_at'?' DEFAULT SYSTIMESTAMP':''}${hasK(c,'PK')||hasK(c,'NN')||c.name==='created_at'||c.name==='updated_at'?' NOT NULL':''}`);  // Oracle: DEFAULT가 제약보다 앞
+    const pk=cols.filter(c=>hasK(c,'PK')).map(c=>c.name); if(pk.length)lines.push(`  CONSTRAINT ${cname('pk',t.id,'')} PRIMARY KEY (${pk.join(', ')})`);
+    cols.filter(c=>hasK(c,'UQ')).forEach(c=>lines.push(`  CONSTRAINT ${cname('uq',t.id,c.name)} UNIQUE (${c.name})`));
+    uniqueGroups(t).forEach(g=>lines.push(`  CONSTRAINT ${cname('uq',t.id,g.join('_'))} UNIQUE (${g.join(', ')})`));
+    notesChecks(t).forEach((x,i)=>lines.push(`  CONSTRAINT ${cname('ck',t.id,'r'+(i+1))} CHECK (${x})`));
+    cols.forEach(c=>{ const e=enumOf(c); if(e)lines.push(`  CONSTRAINT ${cname('ck',t.id,c.name)} CHECK (${c.name} IN (${e.map(x=>`'${x}'`).join(', ')}))`); });
+    L.push(`CREATE TABLE ${t.id} (`, lines.join(',\n'), ');');
+    L.push(`COMMENT ON TABLE ${t.id} IS ${sqlStr((t.ko?t.ko+' - ':'')+(t.desc||''))};`);
+    cols.forEach(c=>{ const s=[c.desc,c.reason].filter(Boolean).join(' / '); if(s)L.push(`COMMENT ON COLUMN ${t.id}.${c.name} IS ${sqlStr(s)};`); });
+    notesIndexes(t).forEach(x=>L.push(x+';'));
+    L.push('');
+  });
+  L.push('-- 외래키와 외래키 인덱스 (Oracle은 FK에 인덱스를 자동으로 만들지 않음)');
+  ora.forEach(t=>{ const lead=new Set([t.cols.find(c=>hasK(c,'PK'))?.name, ...t.cols.filter(c=>hasK(c,'UQ')).map(c=>c.name), ...uniqueGroups(t).map(g=>g[0]), ...indexLeads(t)]);
+    const comp=compositeFks(t);
+    comp.forEach(f=>{ const tg=byId(f.ref); if(!tg||dbOf(tg)!=='Oracle'||tg.planned)return;
+      L.push(`ALTER TABLE ${t.id} ADD CONSTRAINT ${cname('fk',t.id,f.cols.join('_'))} FOREIGN KEY (${f.cols.join(', ')}) REFERENCES ${tg.id} (${f.refCols.join(', ')});`);
+      L.push(`CREATE INDEX ${cname('ix',t.id,f.cols.join('_'))} ON ${t.id} (${f.cols.join(', ')});`); });
+    t.cols.forEach(c=>{ const tg=byId(c.fk); if(!c.fk||!tg||dbOf(tg)!=='Oracle'||tg.planned)return;
+      if(comp.some(f=>f.ref===c.fk&&f.cols.includes(c.name)))return; // 복합 FK가 대신함
+      const tc=tg.cols[targetRowIndex(tg,c)]; if(!tc)return;
+      L.push(`ALTER TABLE ${t.id} ADD CONSTRAINT ${cname('fk',t.id,c.name)} FOREIGN KEY (${c.name}) REFERENCES ${tg.id} (${tc.name});`);
+      if(!lead.has(c.name))L.push(`CREATE INDEX ${cname('ix',t.id,c.name)} ON ${t.id} (${c.name});`); }); });
+  const st=ora.filter(t=>(t.samples||[]).length);
+  if(st.length){ const dep=t=>t.cols.filter(c=>c.fk&&st.some(x=>x.id===c.fk&&x.id!==t.id)).length; st.sort((a,b)=>dep(a)-dep(b));
+    L.push('','-- 예시 데이터 (팀 확정 전 예시값)');
+    st.forEach(t=>t.samples.forEach(r=>{ const ks=Object.keys(r).filter(k=>t.cols.some(c=>c.name===k)); L.push(`INSERT INTO ${t.id} (${ks.join(', ')}) VALUES (${ks.map(k=>sqlVal(r[k])).join(', ')});`); }));
+    L.push('COMMIT;'); }
+  if(warn.length)L.unshift('-- 경고: Oracle 예약어 또는 길이 초과 컬럼 → '+warn.join(', '));
+  return L.join('\n');
+}
+function mdEsc(s){ return String(s??'').replace(/\|/g,'\\|').replace(/\n/g,' '); }
+function mdTable(head,rows){ return ['| '+head.join(' | ')+' |','|'+head.map(()=>'---').join('|')+'|',...rows.map(r=>'| '+r.map(mdEsc).join(' | ')+' |')].join('\n'); }
+function exportMD(){
+  const L=['# FairRail 데이터 명세 (ERD 편집기 생성, 스키마 v'+SEED_VERSION+')','',`테이블 ${tables.length}개 (확장 예정 ${tables.filter(t=>t.planned).length}) · 빅데이터 ${tables.filter(t=>t.big).length}개 · 관계 ${links().length}개`,''];
+  L.push('## 팀 결정 사항','',mdTable(['항목','값','반영 위치','근거','상태'],decisions.map(d=>[d.item,d.value,d.where,d.reason,d.status])),'');
+  Object.entries(GROUPS).forEach(([k,g])=>{ const ts=tables.filter(t=>t.g===k); if(!ts.length)return;
+    L.push(`## ${g.name}`,'');
+    ts.forEach(t=>{ L.push(`### \`${t.id}\` ${t.ko||''} (${dbOf(t)}${t.big?', 빅데이터':''}${t.planned?', 확장 예정':''}${t.noUpdatedAt?', updated_at 생략':''})`,''); if(t.desc)L.push(t.desc,'');
+      L.push(mdTable(['컬럼','타입','키','출처','설명','이유'],t.cols.map(c=>[c.name,c.type,c.keys.replace(/,/g,', ')+(c.fk?` → ${c.fk}`:''),c.src,c.desc,c.reason])),'');
+      if(t.notes)L.push(`> ${t.notes}`,'');
+      if((t.samples||[]).length){ const ks=[...new Set(t.samples.flatMap(r=>Object.keys(r)))]; L.push('예시 데이터:','',mdTable(ks,t.samples.map(r=>ks.map(x=>r[x]==null?'null':r[x]))),''); }
+    }); });
+  Object.values(DOCS).forEach(d=>{ L.push(`## ${d.title}`,'',mdTable(d.head,d.rows),''); });
+  return L.join('\n');
+}
+function openModal(){ $('#modal').hidden=false; setTab(tab); }
+function closeModal(){ $('#modal').hidden=true; }
+function setTab(v){ tab=v; document.querySelectorAll('.mtab').forEach(b=>b.classList.toggle('on',b.dataset.tab===v));
+  const ta=$('#mText'); const imp=v==='import';
+  ta.readOnly=!imp; ta.value=v==='json'?exportJSON():v==='ddl'?exportDDL():v==='md'?exportMD():'';
+  ta.placeholder=imp?'내보낸 JSON을 붙여넣거나 파일을 선택하세요':'';
+  $('#mNote').textContent={json:'팀원에게 공유하면 불러오기로 같은 구조도를 열 수 있습니다.',ddl:'Oracle 테이블만 생성합니다. MongoDB·Redis와 확장 예정 테이블은 제외. 예시 데이터 INSERT 포함.',md:'결정 사항·전체 테이블·예시 데이터·설계 문서를 한 파일 Markdown 명세로 만듭니다.',import:'불러오면 현재 구조도를 덮어씁니다. Ctrl+Z로 되돌릴 수 있습니다.'}[v];
+  $('#mAct').textContent=imp?'불러오기':'복사'; $('#mFileBtn').hidden=!imp; $('#mReset').hidden=!imp;
+  $('#mReset').classList.remove('armed'); $('#mReset').textContent='기본 스키마로 초기화';
+}
+$('#bIO').onclick=openModal; $('#mClose').onclick=closeModal;
+$('#modal').addEventListener('click',e=>{ if(e.target.id==='modal')closeModal(); const t=e.target.closest('.mtab'); if(t)setTab(t.dataset.tab); });
+$('#mAct').onclick=async()=>{
+  const ta=$('#mText');
+  if(tab!=='import'){ try{await navigator.clipboard.writeText(ta.value);toast('복사했습니다');}catch(err){ta.focus();ta.select();toast('선택됨 · Ctrl+C로 복사하세요');} return; }
+  try{ const d=JSON.parse(ta.value); const list=Array.isArray(d)?d:d.tables;
+    if(!Array.isArray(list)||!list.every(t=>t&&t.id&&Array.isArray(t.cols)))throw new Error('tables 배열이 없습니다');
+    snap(); tables=list.map(t=>({id:String(t.id),ko:t.ko||'',g:GROUPS[t.g]?t.g:'ref',db:t.db||'',big:!!t.big,planned:!!t.planned,noUpdatedAt:!!t.noUpdatedAt,samples:Array.isArray(t.samples)?t.samples:[],desc:t.desc||'',notes:t.notes||'',x:+t.x||0,y:+t.y||0,
+      cols:t.cols.map(c=>({name:String(c.name||''),type:c.type||'',keys:c.keys||'',src:c.src||'',desc:c.desc||'',reason:c.reason||'',fk:c.fk||''}))}));
+    if(Array.isArray(d.decisions))decisions=d.decisions;
+    if(tables.every(t=>!t.x&&!t.y))autoLayout(); sel=null; renderAll(); fit(); save(); closeModal(); toast(`테이블 ${tables.length}개를 불러왔습니다`);
+  }catch(err){ toast('JSON 형식이 올바르지 않습니다: '+err.message); }
+};
+$('#mFileBtn').onclick=()=>$('#mFile').click();
+$('#mFile').onchange=e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{$('#mText').value=r.result;}; r.readAsText(f); e.target.value=''; };
+$('#mReset').onclick=e=>{ const b=e.currentTarget; if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='한 번 더 누르면 초기화';return;}
+  snap(); tables=fromSeed(); decisions=JSON.parse(JSON.stringify(DECISIONS_SEED)); autoLayout(); hidden.clear(); sel=null; renderAll(); fit(); save(); closeModal(); toast('기본 스키마로 초기화했습니다'); };
+
+/* ---------- 시작 ---------- */
+const stored=load();
+if(!stored){ tables=fromSeed(); decisions=JSON.parse(JSON.stringify(DECISIONS_SEED)); autoLayout(); renderAll(); requestAnimationFrame(()=>{fit();save();}); }
+else { const r=migrate(stored.seedVersion); renderAll(); if(r){ save(); if(r.added)requestAnimationFrame(()=>fit()); setTimeout(()=>toast(`스키마 v${SEED_VERSION} 반영: 새 테이블 ${r.added}개 추가, 컬럼·키 수정 적용`),500);} }
+syncBig(); syncPlan();
+</script>

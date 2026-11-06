@@ -1,4 +1,4 @@
--- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v7)
+-- FairRail Oracle DDL (ERD 편집기에서 생성, 스키마 v8)
 -- 공통 컬럼 created_at, updated_at 자동 포함 (수정 없는 테이블은 updated_at 생략) · 제약 이름은 30자 이내로 축약
 -- 상태 코드 CHECK 제약은 컬럼 설명이 "A / B / C" 형식일 때 자동 생성
 -- 확장 예정이라 제외: ticket_transfer, member_push_token, password_reset_token, common_code
@@ -316,7 +316,6 @@ COMMENT ON COLUMN seat_inventory.status IS 'HOLD / SOLD / 선점과 확정 구�
 COMMENT ON COLUMN seat_inventory.hold_expires_at IS 'HOLD 만료 시각 (SOLD면 null) / = reservation.pay_deadline_at 복사. Redis TTL이 끝난 뒤 남은 HOLD 행을 다른 사람이 이어받는 기준';
 COMMENT ON COLUMN seat_inventory.created_at IS '생성 시각';
 COMMENT ON COLUMN seat_inventory.updated_at IS '수정 시각';
-CREATE INDEX ix_seatinv_hold ON seat_inventory (CASE WHEN status = 'HOLD' THEN hold_expires_at END);
 
 CREATE TABLE reservation (
   reservation_id             NUMBER NOT NULL,
@@ -364,7 +363,7 @@ COMMENT ON COLUMN reservation.idempotency_key IS '클라이언트 요청 키 / �
 COMMENT ON COLUMN reservation.version IS '낙관적 락 버전 / 락 방식 성능 비교 실험용';
 COMMENT ON COLUMN reservation.created_at IS '생성 시각';
 COMMENT ON COLUMN reservation.updated_at IS '수정 시각';
-CREATE INDEX ix_resv_deadline ON reservation (CASE WHEN status IN ('HOLD', 'PAYMENT_PENDING') THEN pay_deadline_at END);
+CREATE INDEX ix_resv_hold_due ON reservation (CASE WHEN status = 'HOLD' THEN pay_deadline_at END);
 
 CREATE TABLE reservation_seat (
   reservation_id             NUMBER NOT NULL,
@@ -419,6 +418,7 @@ CREATE TABLE payment (
   idempotency_key            VARCHAR2(64) NOT NULL,
   requested_at               TIMESTAMP NOT NULL,
   approved_at                TIMESTAMP,
+  next_check_at              TIMESTAMP,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_payment PRIMARY KEY (payment_id),
@@ -434,9 +434,11 @@ COMMENT ON COLUMN payment.fail_reason IS '실패 사유 / 트러블슈팅';
 COMMENT ON COLUMN payment.idempotency_key IS '결제 요청 키 / 같은 요청 재시도 방지. UNIQUE 범위는 예약 단위';
 COMMENT ON COLUMN payment.requested_at IS '요청 시각 / 결제 소요 시간 측정';
 COMMENT ON COLUMN payment.approved_at IS '승인 시각';
+COMMENT ON COLUMN payment.next_check_at IS 'PG 결과 조회 예정 시각 / 결제 시작 때 마감 값으로 시작. PG 결과를 모르면 payment.pg_recheck_sec만큼 미뤄 스캐너가 같은 건을 매 회차 다시 보지 않게 함';
 COMMENT ON COLUMN payment.created_at IS '생성 시각';
 COMMENT ON COLUMN payment.updated_at IS '수정 시각';
 CREATE UNIQUE INDEX ux_payment_approved ON payment (CASE WHEN status = 'APPROVED' THEN reservation_id END);
+CREATE INDEX ix_pay_recheck ON payment (CASE WHEN status = 'REQUESTED' THEN next_check_at END);
 
 CREATE TABLE cancellation (
   cancel_id                  NUMBER NOT NULL,
@@ -454,12 +456,12 @@ CREATE TABLE cancellation (
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_cancellation PRIMARY KEY (cancel_id),
-  CONSTRAINT ck_cancellation_cancel_type CHECK (cancel_type IN ('USER', 'EXPIRED', 'PAY_FAILED', 'ADMIN')),
+  CONSTRAINT ck_cancellation_cancel_type CHECK (cancel_type IN ('USER', 'PAY_FAILED', 'ADMIN')),
   CONSTRAINT ck_cancellation_refund_status CHECK (refund_status IN ('REQUESTED', 'DONE', 'FAILED')),
   CONSTRAINT ck_cancellation_resold_yn CHECK (resold_yn IN ('Y', 'N'))
 );
 COMMENT ON TABLE cancellation IS '취소·환불 - 취소 유형과 시간 지표. 위험 신호와 재판매율 성과 지표의 원천.';
-COMMENT ON COLUMN cancellation.cancel_type IS 'USER / EXPIRED / PAY_FAILED / ADMIN / 사용자 취소만 위험 신호로 집계';
+COMMENT ON COLUMN cancellation.cancel_type IS 'USER / PAY_FAILED / ADMIN / USER = 사용자 확정 취소(수수료), ADMIN = 운영 취소(수수료 0), PAY_FAILED = 늦은 승인 환불(전액). 만료는 돈이 오가지 않아 cancellation을 만들지 않음';
 COMMENT ON COLUMN cancellation.canceled_at IS '취소 시각';
 COMMENT ON COLUMN cancellation.minutes_after_purchase IS '확정 후 취소까지 분 / 구매 후 취소 시간 위험 신호';
 COMMENT ON COLUMN cancellation.minutes_before_departure IS '출발 전 남은 분 / 노쇼성 직전 취소 탐지, 기획 배경 통계와 연결';
@@ -468,7 +470,7 @@ COMMENT ON COLUMN cancellation.cancel_fee IS '취소 수수료 / 노쇼 억제 �
 COMMENT ON COLUMN cancellation.fee_policy_id IS '적용 수수료 정책';
 COMMENT ON COLUMN cancellation.refund_pg_tx_id IS 'PG 환불 거래 ID / 환불 대사';
 COMMENT ON COLUMN cancellation.refund_status IS 'REQUESTED / DONE / FAILED / 환불 실패 재시도';
-COMMENT ON COLUMN cancellation.resold_yn IS '재판매 여부 / 재판매율 성과 지표';
+COMMENT ON COLUMN cancellation.resold_yn IS '재판매 여부 / INSERT 때 N, 운행 출발 후 배치가 갱신 (concurrency.md §8.3)';
 COMMENT ON COLUMN cancellation.created_at IS '생성 시각';
 COMMENT ON COLUMN cancellation.updated_at IS '수정 시각';
 
@@ -498,7 +500,7 @@ COMMENT ON COLUMN outbox_event.seq IS '발행 순서 번호 (outbox_seq) / 같�
 COMMENT ON COLUMN outbox_event.aggregate_type IS 'RESERVATION / PAYMENT / WAITLIST / 토픽 라우팅';
 COMMENT ON COLUMN outbox_event.aggregate_id IS 'reservation_id, case_id 등 / 숫자·UUID 키 모두 수용';
 COMMENT ON COLUMN outbox_event.partition_key IS 'Kafka 메시지 키 / 결제·취소 이벤트도 reservation_id를 키로 써야 같은 예약의 이벤트 순서 보장';
-COMMENT ON COLUMN outbox_event.shard_no IS '릴레이 샤드 번호 0~15. INSERT 문에서 ORA_HASH(:partition_key, 15)로 계산 / 같은 예약 이벤트는 항상 같은 샤드 → 한 릴레이만 순서대로 발행. 가상 컬럼 대신 일반 컬럼으로 두어 부분 인덱스와 실행 계획을 단순하게';
+COMMENT ON COLUMN outbox_event.shard_no IS '릴레이 샤드 번호 0~15. INSERT 문에서 ORA_HASH(TO_CHAR(:partition_key), 15)로 계산 / 같은 예약 이벤트는 항상 같은 샤드 → 한 릴레이만 순서대로 발행. 가상 컬럼 대신 일반 컬럼으로 두어 부분 인덱스와 실행 계획을 단순하게';
 COMMENT ON COLUMN outbox_event.event_type IS 'SEAT_HELD, PAYMENT_APPROVED …';
 COMMENT ON COLUMN outbox_event.payload IS '이벤트 본문 (JSON) / 스키마 변경에 유연';
 COMMENT ON COLUMN outbox_event.status IS 'PENDING / PUBLISHED / FAILED / FAILED = retry_count가 outbox.max_retry에 도달. 그 샤드를 멈추고 관리자 확인 후 PENDING으로 되돌림';
@@ -531,11 +533,11 @@ CREATE TABLE saga_instance (
   updated_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   created_at                 TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
   CONSTRAINT pk_saga_instance PRIMARY KEY (saga_id),
-  CONSTRAINT ck_saga_instance_current_step CHECK (current_step IN ('SEAT_HELD', 'PAYING', 'CONFIRMED', 'COMPENSATING')),
+  CONSTRAINT ck_saga_instance_current_step CHECK (current_step IN ('SEAT_HELD', 'PAYING', 'CONFIRMED')),
   CONSTRAINT ck_saga_instance_status CHECK (status IN ('RUNNING', 'DONE', 'COMPENSATED'))
 );
 COMMENT ON TABLE saga_instance IS 'Saga 진행 상태 - 예약→결제→확정 흐름의 진행 단계. 중단 지점에서 재개하거나 보상.';
-COMMENT ON COLUMN saga_instance.current_step IS 'SEAT_HELD / PAYING / CONFIRMED / COMPENSATING / 중단 지점에서 재개·보상';
+COMMENT ON COLUMN saga_instance.current_step IS 'SEAT_HELD / PAYING / CONFIRMED / 마지막으로 도달한 단계. 결과는 status (보상은 한 트랜잭션이라 진행 중 단계를 따로 두지 않음)';
 COMMENT ON COLUMN saga_instance.status IS 'RUNNING / DONE / COMPENSATED / 좌석 복구율 100% 검증';
 COMMENT ON COLUMN saga_instance.timeout_at IS '다음 단계 제한 시각 / = reservation.pay_deadline_at 복사. 지나면 보상 실행';
 COMMENT ON COLUMN saga_instance.updated_at IS '갱신 시각 / 멈춘 Saga 탐지';
@@ -567,7 +569,7 @@ COMMENT ON COLUMN waitlist.seat_grade IS 'GENERAL / FIRST / 희망 등급. 좌�
 COMMENT ON COLUMN waitlist.seat_count IS '희망 매수';
 COMMENT ON COLUMN waitlist.requested_at IS '신청 시각 / 대기 순서 기준';
 COMMENT ON COLUMN waitlist.offered_at IS '배정 제안 시각';
-COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / = 제안으로 만든 예약의 pay_deadline_at 복사. 지나면 다음 대기자';
+COMMENT ON COLUMN waitlist.offer_deadline_at IS '결제 기한 / = 제안 예약의 pay_deadline_at 복사. 결제 시작 때 함께 연장 (concurrency.md §4)';
 COMMENT ON COLUMN waitlist.offered_reservation_id IS '제안된 예약';
 COMMENT ON COLUMN waitlist.status IS 'WAITING / OFFERED / ACCEPTED / EXPIRED / CANCELED / SKIPPED / SKIPPED = 제안 시 매수 한도 초과로 건너뜀';
 COMMENT ON COLUMN waitlist.created_at IS '생성 시각';
@@ -1216,8 +1218,8 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_timeout_sec', '180', 1, 'NUMBER', 'PG 승인 요청 타임아웃(초). 앱카드·ISP 인증 시간 포함');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.extend_grace_sec', '60', 1, 'NUMBER', '결제 시작 시 마감 연장 여유(초). 새 마감 = GREATEST(기존, 지금 + 타임아웃 + 여유)');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('outbox.shard_count', '16', 1, 'NUMBER', 'outbox 샤드 수 (INSERT의 ORA_HASH 식·CHECK와 같아야 함)');
-INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inbox.retention_days', '7', 1, 'NUMBER', 'processed_event 보관 기간 (Kafka 보관 기간보다 길게)');
-INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('behavior.retention_days', '180', 1, 'NUMBER', 'behavior_log 보관 기간 (expire_at 계산)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('inbox.retention_days', '8', 1, 'NUMBER', 'processed_event 보관 기간. Kafka 보관(기본 7일)보다 길게');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('behavior.retention_days', '180', 1, 'NUMBER', 'behavior_log 보관 기간 (expire_at 계산). 팀 확정 180일');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_unknown_max_min', '30', 1, 'NUMBER', 'PG 결과를 모를 때 관리자 알림까지 기다리는 시간(분). 자동 만료하지 않음');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('idem.ttl_sec', '600', 1, 'NUMBER', '멱등 키 보관 시간');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('relay.lease_sec', '15', 1, 'NUMBER', 'outbox 샤드 리스 시간');
@@ -1225,6 +1227,9 @@ INSERT INTO app_policy (policy_key, policy_value, version, value_type, descripti
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('outbox.max_retry', '5', 1, 'NUMBER', '발행 재시도 한도. 넘으면 FAILED + 샤드 정지');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('queue_log.retention_days', '30', 1, 'NUMBER', 'queue_log 보관 기간');
 INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('evidence.retention_days', '365', 1, 'NUMBER', '케이스 종료 후 증거 보관 기간');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('payment.pg_recheck_sec', '60', 1, 'NUMBER', 'PG 결과를 모를 때 다음 조회까지(초). payment.next_check_at을 미룸');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('waitlist.reoffer_hold_sec', '60', 1, 'NUMBER', '취소로 풀린 좌석을 대기자 제안 전까지 막아 두는 시간(초)');
+INSERT INTO app_policy (policy_key, policy_value, version, value_type, description) VALUES ('replay.hold_cache_sec', '30', 1, 'NUMBER', 'legal_hold 캐시 TTL(초). 보류 후 이 시간 뒤 $unset 한 번 더');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (1, 1, 'PER_RESERVATION', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (2, 1, 'PER_RUN', 4, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
 INSERT INTO purchase_limit_policy (policy_id, sale_event_id, scope, max_seats, valid_from, valid_to) VALUES (3, 1, 'PER_HOLIDAY', 8, TIMESTAMP '2026-09-07 00:00:00', TIMESTAMP '2026-09-27 23:59:00');
